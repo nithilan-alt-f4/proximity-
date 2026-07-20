@@ -2,29 +2,45 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
-
 // Load environment variables in development
 dotenv.config();
 
-let aiClient: GoogleGenAI | null = null;
-
-function getGeminiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is required but not configured. Please add it in Settings > Secrets.");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+// Helper to make API calls to Groq (can be llama-3.3-70b-versatile, etc.) using native fetch
+async function callGroqAPI(prompt: string, jsonMode = false, systemInstruction?: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY; // Fallback to GEMINI_API_KEY if user already had it set up in secrets
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY environment variable is required but not configured. Please add it in Settings > Secrets (or set it as GROQ_API_KEY / GEMINI_API_KEY).");
   }
-  return aiClient;
+
+  const model = "llama-3.3-70b-versatile";
+  
+  const messages: any[] = [];
+  if (systemInstruction) {
+    messages.push({ role: "system", content: systemInstruction });
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      response_format: jsonMode ? { type: "json_object" } : undefined,
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Groq API returned status ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json() as any;
+  return data.choices?.[0]?.message?.content || "";
 }
 
 // Helper to retry asynchronous operations with exponential backoff on 429/rate limits
@@ -40,7 +56,7 @@ async function callWithRetry<T>(
     const is429 = error?.status === 429 || error?.code === 429 || errorStr.includes("429") || errorStr.includes("quota") || errorStr.includes("resource_exhausted") || errorStr.includes("rate limit") || errorStr.includes("too many requests");
     
     if (is429 && retries > 0) {
-      console.warn(`Gemini API rate limited (429/Quota). Retrying in ${delay}ms... (${retries} retries left)`);
+      console.warn(`Groq/LLM API rate limited (429/Quota). Retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise((resolve) => setTimeout(resolve, delay));
       return callWithRetry(fn, retries - 1, delay * 2);
     }
@@ -401,91 +417,45 @@ async function startServer() {
 
       // STEP 2: Smart AI parse fallback if direct iTunes search yielded nothing or failed confidence check
       if (!foundOniTunes) {
-        console.log(`[Identify] Calling search-grounded Gemini parsing fallback...`);
+        console.log(`[Identify] Calling Groq parsing fallback...`);
         try {
-          const client = getGeminiClient();
           const userPrompt = `Analyze the audio file name: "${filename}"
-Search the web if necessary to identify the correct official song details.
+Identify the correct official song details.
 We need:
 1. "title": The official song title (e.g., "Vizhi Moodi" or "Gerua" or "Tum Hi Ho").
 2. "artist": The primary official artist or singer(s) (e.g., "Harris Jayaraj" or "Arijit Singh").
 3. "album": The official album/movie name (e.g., "Ayan" or "Dilwale" or "Aashiqui 2").
 
-Make sure to strip any web downloader prefixes, suffixes, bitrates, years, or site names (like MassTamilan, Isaimini, Pagalworld, etc.).`;
+Make sure to strip any web downloader prefixes, suffixes, bitrates, years, or site names (like MassTamilan, Isaimini, Pagalworld, etc.).
+Return your output as a valid JSON object matching the schema:
+{
+  "title": "...",
+  "artist": "...",
+  "album": "..."
+}`;
 
-          let response;
+          let responseText = "";
           try {
-            console.log(`[Identify] Attempting search-grounded Gemini call...`);
-            response = await callWithRetry(async () => {
-              return await client.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: userPrompt,
-                config: {
-                  systemInstruction: "You are an expert music metadata analyzer. You MUST extract the song Title, Artist, and Album name. You use Google Search grounding to verify and fetch correct details for regional/Indian and standard songs. Output matching the requested JSON schema. Do not include any explanations outside of the schema.",
-                  responseMimeType: "application/json",
-                  responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official song title",
-                      },
-                      artist: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official artist name",
-                      },
-                      album: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official album name",
-                      },
-                    },
-                    required: ["title", "artist", "album"],
-                  },
-                  tools: [{ googleSearch: {} }],
-                },
-              });
+            console.log(`[Identify] Attempting Groq call...`);
+            responseText = await callWithRetry(async () => {
+              return await callGroqAPI(
+                userPrompt,
+                true,
+                "You are an expert music metadata analyzer. You MUST extract the song Title, Artist, and Album name. Output matching the requested JSON schema. Do not include any explanations outside of the schema."
+              );
             });
-          } catch (groundingError: any) {
-            console.warn(`[Identify] Search-grounded Gemini call failed: ${groundingError.message || groundingError}. Falling back to standard Gemini parsing...`);
-            response = await callWithRetry(async () => {
-              return await client.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: userPrompt,
-                config: {
-                  systemInstruction: "You are an expert music metadata analyzer. You MUST extract the song Title, Artist, and Album name. Output matching the requested JSON schema. Do not include any explanations outside of the schema.",
-                  responseMimeType: "application/json",
-                  responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official song title",
-                      },
-                      artist: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official artist name",
-                      },
-                      album: {
-                        type: Type.STRING,
-                        description: "The identified or corrected official album name",
-                      },
-                    },
-                    required: ["title", "artist", "album"],
-                  },
-                },
-              });
-            });
+          } catch (groqError: any) {
+            console.warn(`[Identify] Groq call failed: ${groqError.message || groqError}.`);
           }
 
-          const responseText = response.text;
           if (responseText) {
             const identifiedData = JSON.parse(responseText.trim());
-            console.log(`[Identify] Gemini parsed:`, identifiedData);
+            console.log(`[Identify] Groq parsed:`, identifiedData);
             if (identifiedData.title) finalTitle = identifiedData.title;
             if (identifiedData.artist) finalArtist = identifiedData.artist;
             if (identifiedData.album) finalAlbum = identifiedData.album;
 
-            // Search iTunes again with the high-quality Gemini extracted metadata to fetch the album artwork
+            // Search iTunes again with the high-quality Groq extracted metadata to fetch the album artwork
             try {
               const query = `${finalTitle} ${finalArtist}`.trim();
               const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
@@ -501,15 +471,15 @@ Make sure to strip any web downloader prefixes, suffixes, bitrates, years, or si
                   if (finalAlbum === "Unknown Album" && item.collectionName) {
                     finalAlbum = item.collectionName;
                   }
-                  console.log(`[Identify] iTunes match after Gemini: artwork found for "${finalTitle}"`);
+                  console.log(`[Identify] iTunes match after Groq: artwork found for "${finalTitle}"`);
                 }
               }
             } catch (innerITunesError) {
-              console.warn("[Identify] iTunes match after Gemini failed:", innerITunesError);
+              console.warn("[Identify] iTunes match after Groq failed:", innerITunesError);
             }
           }
-        } catch (geminiError: any) {
-          console.warn("[Identify] Smart Gemini fallback failed, using local clean info only:", geminiError);
+        } catch (groqError: any) {
+          console.warn("[Identify] Smart Groq fallback failed, using local clean info only:", groqError);
         }
       }
 
@@ -605,57 +575,37 @@ Make sure to strip any web downloader prefixes, suffixes, bitrates, years, or si
         }
       }
 
-      // TIER 4: Gemini Search Grounding Fallback (specifically to find real lyrics for non-English or other hard-to-find songs)
+      // TIER 4: Groq Fallback (specifically to find real lyrics for non-English or other hard-to-find songs)
       if (!finalLyrics || finalLyrics.trim() === "") {
-        console.log(`[Lyrics] Attempting search-grounded Gemini lookup for "${title}" by "${artist}"`);
+        console.log(`[Lyrics] Attempting Groq lookup for "${title}" by "${artist}"`);
         try {
-          const ai = getGeminiClient();
           const durationSec = duration || 180;
           
-          const prompt = `Search the web for the official, authentic lyrics of the song "${title}" by "${artist}". 
+          const prompt = `Recall the official, authentic lyrics of the song "${title}" by "${artist}" from your internal knowledge base.
 If the song is in a non-English language (e.g. Tamil, Hindi, Korean, Spanish, French, Japanese, Telugu, etc.), fetch the official original language lyrics (or popular Romanized transliteration if native text is hard to align).
-CRITICAL: DO NOT INVENT, HALLUCINATE, OR PROGRAMMATICALLY GENERATE ANY LYRICS. If you cannot find the official lyrics on Google, reply exactly with: "LYRICS_NOT_FOUND". Do not write any placeholder or synthetic lyrics.
-If you find the real lyrics, provide them in a clean format. Also, since this is for a synchronized player, distribute the timestamps in LRC format (e.g., [mm:ss.cc] or [seconds.hundredths]) or just provide the lines of lyrics, and we will space them evenly across the song's duration of ${durationSec} seconds. 
+CRITICAL: DO NOT INVENT, HALLUCINATE, OR PROGRAMMATICALLY GENERATE ANY LYRICS. If you do not know the official lyrics of "${title}" by "${artist}", reply exactly with: "LYRICS_NOT_FOUND". Do not write any placeholder or synthetic lyrics.
+If you know the real lyrics, provide them in a clean format. Also, since this is for a synchronized player, distribute the timestamps in LRC format or just provide the lines of lyrics, and we will space them evenly across the song's duration of ${durationSec} seconds.
 Please return your output in JSON format with two properties:
 1. "lyrics": a string of the full plain-text lyrics found.
 2. "syncedLyrics": an array of objects with "time" (number in seconds) and "text" (string) representing the timeline. If you cannot estimate accurate timings, just distribute the lines evenly from 0 to ${durationSec} seconds.
 
 Your output must be a valid JSON object. Do not include markdown blocks like \`\`\`json, just return the raw JSON string.`;
 
-          let response;
+          let responseText = "";
           try {
-            response = await callWithRetry(() => ai.models.generateContent({
-              model: "gemini-3.5-flash",
-              contents: prompt,
-              config: {
-                tools: [{ googleSearch: {} }],
-                responseMimeType: "application/json",
-              }
-            }));
-          } catch (groundingError: any) {
-            console.warn(`[Lyrics] Search-grounded Gemini call failed: ${groundingError.message || groundingError}. Falling back to standard Gemini parsing...`);
-            const fallbackPrompt = `Recall the official, authentic lyrics of the song "${title}" by "${artist}" from your internal knowledge. 
-If the song is in a non-English language (e.g. Tamil, Hindi, Korean, Spanish, French, Japanese, Telugu, etc.), get the official original language lyrics (or popular Romanized transliteration if native text is hard to align).
-CRITICAL: DO NOT INVENT, HALLUCINATE, OR PROGRAMMATICALLY GENERATE ANY LYRICS. If you do not know the official lyrics, reply exactly with: "LYRICS_NOT_FOUND". Do not write any placeholder or synthetic lyrics.
-If you know the real lyrics, provide them in a clean format. Also, since this is for a synchronized player, distribute the timestamps in LRC format (e.g., [mm:ss.cc] or [seconds.hundredths]) or just provide the lines of lyrics, and we will space them evenly across the song's duration of ${durationSec} seconds. 
-Please return your output in JSON format with two properties:
-1. "lyrics": a string of the full plain-text lyrics found.
-2. "syncedLyrics": an array of objects with "time" (number in seconds) and "text" (string) representing the timeline. If you cannot estimate accurate timings, just distribute the lines evenly from 0 to ${durationSec} seconds.
-
-Your output must be a valid JSON object. Do not include markdown blocks like \`\`\`json, just return the raw JSON string.`;
-
-            response = await callWithRetry(() => ai.models.generateContent({
-              model: "gemini-3.5-flash",
-              contents: fallbackPrompt,
-              config: {
-                responseMimeType: "application/json",
-              }
-            }));
+            responseText = await callWithRetry(async () => {
+              return await callGroqAPI(
+                prompt,
+                true,
+                "You are an expert music lyrics retriever. You must look up or recall the exact official lyrics. Do not invent any lyrics under any circumstances. If unknown, output {\"lyrics\": \"LYRICS_NOT_FOUND\", \"syncedLyrics\": []}."
+              );
+            });
+          } catch (groqError: any) {
+            console.warn(`[Lyrics] Groq lyrics call failed: ${groqError.message || groqError}.`);
           }
 
-          const responseText = response.text?.trim() || "";
           if (responseText && !responseText.includes("LYRICS_NOT_FOUND")) {
-            const data = JSON.parse(responseText);
+            const data = JSON.parse(responseText.trim());
             if (data.lyrics && data.lyrics.trim().length > 0) {
               finalLyrics = data.lyrics;
               finalSynced = Array.isArray(data.syncedLyrics) 
@@ -664,17 +614,17 @@ Your output must be a valid JSON object. Do not include markdown blocks like \`\
                     text: String(l.text || ""),
                   }))
                 : generateEvenlySpacedLyrics(data.lyrics, durationSec);
-              console.log(`[Lyrics] Success retrieving lyrics via search-grounded Gemini`);
+              console.log(`[Lyrics] Success retrieving lyrics via Groq`);
             }
           }
-        } catch (geminiError) {
-          console.error("[Lyrics] Gemini search grounding lookup failed:", geminiError);
+        } catch (groqError) {
+          console.error("[Lyrics] Groq lyric lookup failed:", groqError);
         }
       }
 
       // If all tiers failed, return 404 "No lyrics found"
       if (!finalLyrics || finalLyrics.trim() === "") {
-        console.log(`[Lyrics] No lyrics found on LRCLIB, lyrics.ovh or Gemini. Aborting search.`);
+        console.log(`[Lyrics] No lyrics found on LRCLIB, lyrics.ovh or Groq. Aborting search.`);
         res.status(404).json({
           error: "No lyrics found for this song. Try editing the filename or entering a custom query."
         });
@@ -715,10 +665,8 @@ Your output must be a valid JSON object. Do not include markdown blocks like \`\
       let lyrics = "";
       let syncedLyrics: Array<{ time: number; text: string }> = [];
 
-      const ai = getGeminiClient();
-
       if (fileType === "txt") {
-        // Plain text: Use Gemini to automatically sync text lines to the song duration!
+        // Plain text: Use Groq to automatically sync text lines to the song duration!
         const prompt = `You are an AI Karaoke Synchronizer. We have a plain text lyric file for the song "${songTitle}" by "${songArtist}" (Duration: ${songDuration} seconds).
 The text of the lyrics is:
 ${fileContent}
@@ -731,20 +679,19 @@ Return your output as a valid JSON object with:
 
 Your response must be a valid JSON object. Do not include markdown blocks like \`\`\`json, just return the raw JSON string.`;
 
-        const response = await callWithRetry(() => ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          }
-        }));
+        const responseText = await callWithRetry(async () => {
+          return await callGroqAPI(
+            prompt,
+            true,
+            "You are a helpful karaoke lyric synchronizer assistant. Output only a valid JSON object."
+          );
+        });
 
-        const responseText = response.text?.trim() || "";
-        const data = JSON.parse(responseText);
+        const data = JSON.parse(responseText.trim());
         lyrics = data.lyrics || fileContent;
         syncedLyrics = Array.isArray(data.syncedLyrics) ? data.syncedLyrics : [];
       } else {
-        // LRC or SRT files: They already have timestamps, but we can use Gemini to parse them perfectly,
+        // LRC or SRT files: They already have timestamps, but we can use Groq to parse them perfectly,
         // clean up subtitle metadata/junk, remove timing overlaps, and align them.
         const prompt = `You are an AI Lyric File Parser. We have a dropped ${fileType.toUpperCase()} file for the song "${songTitle}" by "${songArtist}".
 Raw file content:
@@ -762,16 +709,15 @@ Return a JSON object with:
 
 Your response must be a valid JSON object. Do not include markdown blocks like \`\`\`json, just return the raw JSON string.`;
 
-        const response = await callWithRetry(() => ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-          }
-        }));
+        const responseText = await callWithRetry(async () => {
+          return await callGroqAPI(
+            prompt,
+            true,
+            "You are an expert subtitle and lyric parser. Output only a valid JSON object."
+          );
+        });
 
-        const responseText = response.text?.trim() || "";
-        const data = JSON.parse(responseText);
+        const data = JSON.parse(responseText.trim());
         lyrics = data.lyrics || "";
         syncedLyrics = Array.isArray(data.syncedLyrics) ? data.syncedLyrics : [];
       }
@@ -811,7 +757,6 @@ Your response must be a valid JSON object. Do not include markdown blocks like \
 
       console.log(`[Translate] Translating lyrics to ${language}`);
 
-      const ai = getGeminiClient();
       let translatedLyrics = "";
       let translatedSynced: any[] = [];
 
@@ -823,11 +768,14 @@ Do not add any explanations, introductory text, formatting blocks, or translator
 Input lyrics:
 ${lyrics}`;
 
-      const plainResponse = await callWithRetry(() => ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: plainPrompt,
-      }));
-      translatedLyrics = (plainResponse.text || "").trim();
+      const plainText = await callWithRetry(async () => {
+        return await callGroqAPI(
+          plainPrompt,
+          false,
+          "You are a poetic translator. Do not explain anything, just translate the text exactly line-by-line."
+        );
+      });
+      translatedLyrics = plainText.trim();
 
       // 2. Translate synced lines if provided
       if (Array.isArray(syncedLyrics) && syncedLyrics.length > 0) {
@@ -837,23 +785,24 @@ Return a JSON array of objects, where each object has:
 2. "text": the translated string for that line.
 
 Keep the translation poetic and accurate to the original song's meaning.
-Ensure the response is a valid JSON array of objects. Do not include markdown blocks like \`\`\`json, just return the raw JSON.
+Ensure the response is a valid JSON object containing a "translations" key which is an array of objects. Do not include markdown blocks like \`\`\`json, just return the raw JSON.
 
 Input lines:
 ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))}`;
 
-        const syncedResponse = await callWithRetry(() => ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: syncedPrompt,
-          config: {
-            responseMimeType: "application/json",
-          }
-        }));
+        const syncedResponseText = await callWithRetry(async () => {
+          return await callGroqAPI(
+            syncedPrompt,
+            true,
+            "You are an expert poetic translator. Always output a valid JSON object containing a 'translations' key which is a JSON array."
+          );
+        });
 
         try {
-          const parsed = JSON.parse(syncedResponse.text?.trim() || "[]");
-          if (Array.isArray(parsed)) {
-            translatedSynced = parsed.map((l: any) => ({
+          const parsed = JSON.parse(syncedResponseText.trim());
+          const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.translations) ? parsed.translations : []);
+          if (Array.isArray(list)) {
+            translatedSynced = list.map((l: any) => ({
               time: parseFloat(l.time) || 0,
               text: String(l.text || ""),
             }));
