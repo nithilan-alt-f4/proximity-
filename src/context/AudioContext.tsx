@@ -48,6 +48,8 @@ interface AudioContextType {
   setActivePlaylistId: (id: string | null) => void;
   updateSongLyrics: (songId: string, lyrics: string, syncedLyrics: any[], title?: string, artist?: string) => Promise<void>;
   setQueue: (queue: Song[]) => void;
+  playNext: (song: Song) => void;
+  addToQueue: (song: Song) => void;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -88,6 +90,13 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const filtersRef = useRef<BiquadFilterNode[]>([]);
   const isAudioNodesSetupRef = useRef(false);
   const currentSongIdRef = useRef<string | null>(null);
+  // Holds the pre-shuffle queue order so shuffle can be toggled back off cleanly
+  const preShuffleQueueRef = useRef<Song[] | null>(null);
+  // Always points at the latest handleSongEnded closure. The "ended" listener below is
+  // registered once (in the mount-only effect) so without this ref it would keep calling
+  // a stale version of handleSongEnded that closes over the very first render's empty
+  // queue/queueIndex/repeat state - which is why songs previously failed to autoplay.
+  const handleSongEndedRef = useRef<() => void>(() => {});
 
   // Initialize Audio Element
   useEffect(() => {
@@ -103,7 +112,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const handleEnded = () => {
-      handleSongEnded();
+      handleSongEndedRef.current();
     };
 
     audio.addEventListener("timeupdate", handleTimeUpdate);
@@ -438,6 +447,39 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleShuffle = () => {
+    if (!shuffle) {
+      // Turning shuffle ON: shuffle the current queue in place (keeping the currently
+      // playing song anchored at the front) so nextSong() can just walk forward through
+      // it sequentially, instead of picking a new random song every time.
+      if (queue.length > 1) {
+        preShuffleQueueRef.current = queue;
+
+        const current = queueIndex >= 0 ? queue[queueIndex] : null;
+        const rest = queue.filter((_, i) => i !== queueIndex);
+
+        // Fisher-Yates shuffle
+        for (let i = rest.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [rest[i], rest[j]] = [rest[j], rest[i]];
+        }
+
+        const shuffledQueue = current ? [current, ...rest] : rest;
+        setQueue(shuffledQueue);
+        setQueueIndex(0);
+      }
+    } else {
+      // Turning shuffle OFF: restore the queue to its pre-shuffle order if we saved one
+      if (preShuffleQueueRef.current) {
+        const restored = preShuffleQueueRef.current;
+        preShuffleQueueRef.current = null;
+        setQueue(restored);
+        if (currentSong) {
+          const idx = restored.findIndex((s) => s.id === currentSong.id);
+          setQueueIndex(idx !== -1 ? idx : 0);
+        }
+      }
+    }
+
     setShuffle(!shuffle);
   };
 
@@ -448,14 +490,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const nextSong = () => {
     if (queue.length === 0) return;
 
-    if (shuffle) {
-      // Shuffle mode: pick a random song from queue
-      const randIdx = Math.floor(Math.random() * queue.length);
-      setQueueIndex(randIdx);
-      setCurrentSong(queue[randIdx]);
-      return;
-    }
-
+    // Note: shuffle no longer re-randomizes on every call. When shuffle is turned on,
+    // the queue itself gets shuffled once (see toggleShuffle) and playback simply
+    // advances through that shuffled order sequentially, same as normal playback.
     let nextIdx = queueIndex + 1;
     if (nextIdx >= queue.length) {
       if (repeat === "all") {
@@ -497,6 +534,13 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       nextSong();
     }
   };
+
+  // Keep the ref pointed at the latest handleSongEnded on every render so the
+  // audio element's "ended" listener (attached once on mount) always sees
+  // up-to-date queue/queueIndex/repeat state instead of the initial render's.
+  useEffect(() => {
+    handleSongEndedRef.current = handleSongEnded;
+  });
 
   const applyEqProfile = (profile: EqProfile) => {
     setActiveEqProfile(profile);
@@ -648,6 +692,43 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Insert a song immediately after the currently playing track in the queue
+  // (right-click "Play Next" support). If nothing is currently playing, just start it.
+  const playNext = (song: Song) => {
+    if (!currentSong) {
+      playSong(song);
+      return;
+    }
+
+    setQueue((prevQueue) => {
+      // Avoid duplicate entries - drop any existing copy of this song first
+      const withoutSong = prevQueue.filter((s) => s.id !== song.id);
+      const currentIdx = withoutSong.findIndex((s) => s.id === currentSong.id);
+      const insertAt = currentIdx === -1 ? 0 : currentIdx + 1;
+
+      const updated = [...withoutSong];
+      updated.splice(insertAt, 0, song);
+
+      const newCurrentIdx = updated.findIndex((s) => s.id === currentSong.id);
+      setQueueIndex(newCurrentIdx);
+
+      return updated;
+    });
+  };
+
+  // Append a song to the end of the queue without interrupting playback
+  const addToQueue = (song: Song) => {
+    if (!currentSong) {
+      playSong(song);
+      return;
+    }
+
+    setQueue((prevQueue) => {
+      if (prevQueue.some((s) => s.id === song.id)) return prevQueue;
+      return [...prevQueue, song];
+    });
+  };
+
   return (
     <AudioContext.Provider
       value={{
@@ -695,6 +776,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActivePlaylistId,
         updateSongLyrics,
         setQueue: updateQueue,
+        playNext,
+        addToQueue,
       }}
     >
       {children}
