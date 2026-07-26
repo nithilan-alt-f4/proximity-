@@ -5,3 +5,14 @@
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
+
+/* Hide the browser's native scrollbar everywhere (library list, queue drawer, lyrics
+   panel, etc.) while keeping every element fully scrollable. */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / legacy Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, modern Edge */
+}
