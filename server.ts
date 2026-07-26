@@ -421,6 +421,13 @@ async function startServer() {
         try {
           const userPrompt = `Analyze the audio file name: "${filename}"
 Identify the correct official song details.
+
+Note: many of these files are actually music videos that were saved/converted to .mp3,
+so the filename is often very long and cluttered, e.g. containing things like
+"(Official Music Video)", "(Official Video)", "[Lyric Video]", "HD", "4K", "Full Song",
+upload years, resolution tags, or channel names. Ignore all of that clutter entirely -
+it is never part of the real song title or artist.
+
 We need:
 1. "title": The official song title (e.g., "Vizhi Moodi" or "Gerua" or "Tum Hi Ho").
 2. "artist": The primary official artist or singer(s) (e.g., "Harris Jayaraj" or "Arijit Singh").
