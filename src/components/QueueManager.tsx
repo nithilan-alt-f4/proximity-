@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { useAudio } from "../context/AudioContext";
 import { themeStyles, getThemeGradient } from "../lib/theme";
-import { X, ChevronUp, ChevronDown, Trash2, Music, Play, Disc } from "lucide-react";
+import { X, ChevronUp, ChevronDown, Trash2, Music, Play, Disc, GripVertical } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface QueueManagerProps {
@@ -20,8 +20,19 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ isOpen, onClose }) =
   } = useAudio();
 
   const activeStyles = themeStyles[theme] || themeStyles.red;
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   if (!isOpen) return null;
+
+  // Reorder the queue by dragging a track to a new position
+  const reorderQueue = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    const newQueue = [...queue];
+    const [moved] = newQueue.splice(fromIndex, 1);
+    newQueue.splice(toIndex, 0, moved);
+    setQueue(newQueue);
+  };
 
   // Swap function to reorder songs
   const moveSong = (index: number, direction: "up" | "down") => {
@@ -97,14 +108,33 @@ export const QueueManager: React.FC<QueueManagerProps> = ({ isOpen, onClose }) =
               return (
                 <div
                   key={`${song.id}-${idx}`}
-                  className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all ${
-                    isCurrent
+                  draggable={true}
+                  onDragStart={() => setDragIndex(idx)}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragOverIndex !== idx) setDragOverIndex(idx);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIndex !== null) reorderQueue(dragIndex, idx);
+                    setDragIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing ${
+                    dragOverIndex === idx && dragIndex !== null && dragIndex !== idx
+                      ? `${activeStyles.border} border-dashed`
+                      : isCurrent
                       ? `${activeStyles.pulseBg} ${activeStyles.pulseBorder} border-opacity-40`
                       : "bg-zinc-900/30 border-zinc-900/60 hover:bg-zinc-900/60 hover:border-zinc-850"
                   }`}
                 >
                   {/* Left: Artwork / Index and Metadata */}
                   <div className="flex items-center gap-3 overflow-hidden flex-1">
+                    <GripVertical className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
                     <div className="relative w-9 h-9 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-zinc-850">
                       {song.albumCover ? (
                         <img
