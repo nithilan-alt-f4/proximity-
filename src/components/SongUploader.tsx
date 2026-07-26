@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
 import audioDb, { Song, Playlist } from "../lib/db";
 import { themeStyles, getThemeGradient } from "../lib/theme";
-import { parseAudioMetadata } from "../lib/metadataParser";
 import { 
   Upload, 
   Music, 
@@ -86,8 +85,29 @@ export const SongUploader: React.FC = () => {
     activePlaylistId,
     theme,
     loadSongs,
-    loadPlaylists
+    loadPlaylists,
+    playNext,
+    addToQueue
   } = useAudio();
+
+  // Right-click context menu state: { x, y, song }
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; song: Song } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [contextMenu]);
   
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -170,8 +190,10 @@ export const SongUploader: React.FC = () => {
   };
 
   const processFile = async (file: File): Promise<StagedFile> => {
-    // 1. Extract local ID3 embedded metadata first
-    const parsedMeta = await parseAudioMetadata(file);
+    // We never read embedded ID3 metadata for artist/album cover - it's unreliable for
+    // these files (many are music videos saved as long-filename mp3s with garbage or
+    // missing tags). Instead we always fall back to filename parsing, then let the
+    // background AI/iTunes identify step below figure out the real title/artist/cover.
     const localDetails = parseFilename(file.name);
     
     // Get duration of the song locally
@@ -195,23 +217,15 @@ export const SongUploader: React.FC = () => {
 
     const duration = await getDuration();
 
-    // Use embedded tags if present; otherwise fall back to filename extraction
-    const finalTitle = parsedMeta.title || localDetails.title;
-    const finalArtist = parsedMeta.artist || localDetails.artist;
-    const finalAlbum = parsedMeta.album || localDetails.album;
-    const finalAlbumCover = parsedMeta.albumCoverUrl || "";
-
-    const hasEmbeddedMeta = !!(parsedMeta.title && parsedMeta.artist && parsedMeta.artist !== "Unknown Artist");
-
     return {
       file,
-      title: finalTitle,
-      artist: finalArtist,
-      album: finalAlbum,
-      albumCover: finalAlbumCover,
+      title: localDetails.title,
+      artist: localDetails.artist,
+      album: localDetails.album,
+      albumCover: "",
       duration,
-      // If we have fully validated ID3 tags locally, we skip calling the smart filename guess engine
-      isIdentifying: !hasEmbeddedMeta,
+      // Always identify via the AI/iTunes filename pipeline - never trust local metadata
+      isIdentifying: true,
       editedFields: {},
     };
   };
@@ -245,55 +259,23 @@ export const SongUploader: React.FC = () => {
       const current = initialStaged[i];
       const filename = current.file.name;
       
-      if (current.isIdentifying) {
-        const meta = await identifyMetadata(filename);
-        
-        setStagedFiles((prev) => {
-          return prev.map((st) => {
-            if (st.file === current.file) {
-              return {
-                ...st,
-                title: meta.title,
-                artist: meta.artist,
-                album: meta.album,
-                albumCover: meta.albumCover,
-                isIdentifying: false,
-              };
-            }
-            return st;
-          });
-        });
-      } else if (!current.albumCover && current.title && current.artist && current.artist !== "Unknown Artist") {
-        // Has embedded metadata tags but lacks cover art: search iTunes directly to backfill artwork
-        try {
-          const query = `${current.artist} ${current.title}`.trim();
-          const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
-          const res = await fetch(searchUrl);
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.results && data.results.length > 0) {
-              const item = data.results[0];
-              if (item.artworkUrl100) {
-                const highResCover = item.artworkUrl100.replace("100x100bb", "600x600bb");
-                setStagedFiles((prev) => {
-                  return prev.map((st) => {
-                    if (st.file === current.file) {
-                      return {
-                        ...st,
-                        albumCover: highResCover,
-                        album: st.album === "Unknown Album" && item.collectionName ? item.collectionName : st.album
-                      };
-                    }
-                    return st;
-                  });
-                });
-              }
-            }
+      const meta = await identifyMetadata(filename);
+
+      setStagedFiles((prev) => {
+        return prev.map((st) => {
+          if (st.file === current.file) {
+            return {
+              ...st,
+              title: meta.title,
+              artist: meta.artist,
+              album: meta.album,
+              albumCover: meta.albumCover,
+              isIdentifying: false,
+            };
           }
-        } catch (err) {
-          console.warn("iTunes cover art backfill failed:", err);
-        }
-      }
+          return st;
+        });
+      });
     }
   };
 
@@ -1177,6 +1159,10 @@ export const SongUploader: React.FC = () => {
                   key={song.id}
                   data-song-id={song.id}
                   draggable={true}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ x: e.clientX, y: e.clientY, song });
+                  }}
                   onDragStart={(e) => {
                     const selectedArray = Array.from(selectedSongIds);
                     const dragIds = selectedSongIds.has(song.id)
@@ -1310,6 +1296,54 @@ export const SongUploader: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Right-click context menu: Play Next / Add to Queue */}
+      {contextMenu && (
+        <div
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            zIndex: 100,
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-48 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl p-1.5 text-slate-100"
+        >
+          <p className="text-[10px] font-semibold text-zinc-500 px-2.5 py-1 uppercase border-b border-zinc-900 mb-1 truncate">
+            {contextMenu.song.title}
+          </p>
+          <button
+            onClick={() => {
+              playNext(contextMenu.song);
+              setContextMenu(null);
+            }}
+            className="w-full text-left text-xs px-2.5 py-1.5 hover:bg-zinc-900 rounded-lg transition flex items-center gap-2 text-zinc-300 hover:text-white cursor-pointer"
+          >
+            <ListMusic className="w-3.5 h-3.5" />
+            Play Next
+          </button>
+          <button
+            onClick={() => {
+              addToQueue(contextMenu.song);
+              setContextMenu(null);
+            }}
+            className="w-full text-left text-xs px-2.5 py-1.5 hover:bg-zinc-900 rounded-lg transition flex items-center gap-2 text-zinc-300 hover:text-white cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add to Queue
+          </button>
+          <button
+            onClick={() => {
+              playSong(contextMenu.song, filteredSongs);
+              setContextMenu(null);
+            }}
+            className="w-full text-left text-xs px-2.5 py-1.5 hover:bg-zinc-900 rounded-lg transition flex items-center gap-2 text-zinc-300 hover:text-white cursor-pointer"
+          >
+            <Play className="w-3.5 h-3.5" />
+            Play Now
+          </button>
+        </div>
+      )}
     </div>
   );
 };
