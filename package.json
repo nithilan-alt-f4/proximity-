@@ -1,9 +1,9 @@
 {
-  "name": "react-example",
+  "name": "proximity-plus",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "main.js",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
@@ -13,6 +13,7 @@
     "package": "electron-builder --win"
   },
   "build": {
+    "productName": "proximity+",
     "directories": {
       "output": "dist-desktop"
     },
