@@ -1,8 +1,15 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
+import { app, BrowserWindow } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
+
+// 1. Automatically start your backend server in the background
 try {
-  require(path.join(__dirname, 'server.cjs'));
+  require(path.join(__dirname, 'dist', 'server.cjs'));
   console.log('Backend server started successfully.');
 } catch (error) {
   console.error('Failed to start backend server:', error);
@@ -18,7 +25,8 @@ function createWindow() {
     }
   });
 
-  win.loadFile(path.join(__dirname, 'index.html'));
+  // 2. Load your local compiled interface file
+  win.loadFile(path.join(__dirname, 'dist', 'index.html'));
 }
 
 app.whenReady().then(createWindow);
