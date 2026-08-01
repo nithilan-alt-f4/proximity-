@@ -32,5 +32,5 @@ jobs:
       - name: Upload Executable Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-desktop-app
+          name: proximity-plus
           path: dist-desktop/
