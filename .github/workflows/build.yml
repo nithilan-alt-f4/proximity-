@@ -22,7 +22,9 @@ jobs:
         run: npm install
 
       - name: Compile Code
-        run: npm run build
+        run: |
+          npm run build
+          copy main.js dist\main.js
 
       - name: Build Electron Executable
         run: npm run package
