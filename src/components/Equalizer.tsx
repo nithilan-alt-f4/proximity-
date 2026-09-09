@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useAudio } from "../context/AudioContext";
 import { EqProfile, DEFAULT_EQ_PRESETS } from "../lib/db";
 import { X, Save, Trash2, RefreshCw } from "lucide-react";
@@ -78,7 +78,7 @@ export const Equalizer: React.FC<EqualizerProps> = ({ onClose }) => {
                 <div key={profile.id} className={`eq-profile-btn ${isActive ? "eq-profile-btn-active" : ""}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <button onClick={() => applyEqProfile(profile)} style={{ cursor: "pointer" }}>{profile.name}</button>
                   {!profile.isPreset && (
-                    <button onClick={() => deleteEqProfile(profile.id)} style={{ color: "#999", cursor: "pointer" }}>
+                    <button onClick={() => deleteEqProfile(profile.id)} style={{ color: "var(--text-muted)", cursor: "pointer" }}>
                       <Trash2 size={10} />
                     </button>
                   )}
@@ -87,7 +87,7 @@ export const Equalizer: React.FC<EqualizerProps> = ({ onClose }) => {
             })}
           </div>
 
-          <div style={{ display: "flex", gap: 4, justifyContent: "center", padding: 16, border: "1px solid var(--line)", background: "#ededed" }}>
+          <div style={{ display: "flex", gap: 4, justifyContent: "center", padding: 16, border: "1px solid var(--line)", background: "var(--paper-2)" }}>
             {frequencies.map((freq, i) => (
               <div key={freq} className="eq-slider-group">
                 <span className="eq-gain">{sliderGains[i] > 0 ? `+${sliderGains[i]}` : sliderGains[i] ?? 0}</span>

@@ -5,42 +5,94 @@ import { createServer as createViteServer } from "vite";
 // Load environment variables in development
 dotenv.config();
 
-// Helper to make API calls to Groq (can be llama-3.3-70b-versatile, etc.) using native fetch
+// ---- Multi-key Groq pool ----
+// GROQ_API_KEYS holds a comma-separated list of keys (e.g. "key1,key2,key3").
+// Each key is a separate Groq account with its own rate limits, so concurrent
+// requests are spread across ALL keys — every key works on a different song at once.
+const GROQ_KEYS = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
+  .split(",")
+  .map((k) => k.trim())
+  .filter(Boolean);
+
+// In-flight request count per key, used to pick the least-loaded key per request.
+const keyLoad: number[] = GROQ_KEYS.map(() => 0);
+
+// Picks the least-loaded key so N concurrent requests each land on a DIFFERENT key.
+function acquireGroqKey(): string {
+  if (GROQ_KEYS.length === 0) {
+    throw new Error("No GROQ API keys configured. Please add GROQ_API_KEYS (comma-separated) to .env.");
+  }
+  let best = 0;
+  for (let i = 1; i < keyLoad.length; i++) {
+    if (keyLoad[i] < keyLoad[best]) best = i;
+  }
+  keyLoad[best]++;
+  return GROQ_KEYS[best];
+}
+
+function releaseGroqKey(key: string) {
+  const i = GROQ_KEYS.indexOf(key);
+  if (i >= 0) keyLoad[i] = Math.max(0, keyLoad[i] - 1);
+}
+
+// Active model + fallback chain. These keys only have access to the newer model lineup
+// (gpt-oss / qwen3 / compound) — llama-3.3-70b-versatile is gone and 404s, which silently
+// degraded every resolution to "Unknown Artist". Override via GROQ_MODEL env if needed.
+const GROQ_MODEL = (process.env.GROQ_MODEL || "openai/gpt-oss-120b").trim();
+const GROQ_MODEL_FALLBACKS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "groq/compound-mini"]
+  .filter((m) => m !== GROQ_MODEL);
+
+// Helper to make API calls to Groq using native fetch. Tries the active model first;
+// if it 404s/403s (retired model or no access) it automatically walks the fallback chain.
 async function callGroqAPI(prompt: string, jsonMode = false, systemInstruction?: string): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY; // Fallback to GEMINI_API_KEY if user already had it set up in secrets
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY environment variable is required but not configured. Please add it in Settings > Secrets (or set it as GROQ_API_KEY / GEMINI_API_KEY).");
+  const apiKey = acquireGroqKey();
+  try {
+    const attempts = [GROQ_MODEL, ...GROQ_MODEL_FALLBACKS];
+    let lastError: any = null;
+
+    for (const model of attempts) {
+      try {
+        const messages: any[] = [];
+        if (systemInstruction) {
+          messages.push({ role: "system", content: systemInstruction });
+        }
+        messages.push({ role: "user", content: prompt });
+
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            response_format: jsonMode ? { type: "json_object" } : undefined,
+            temperature: 0.1,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          return data.choices?.[0]?.message?.content || "";
+        }
+
+        const errText = await response.text();
+        const status = response.status;
+        lastError = new Error(`Groq API returned status ${status}: ${errText}`);
+
+        // Dead/unavailable model or missing permission → walk to the next fallback model.
+        if (status !== 404 && status !== 403) break;
+        console.warn(`[Groq] Model "${model}" unavailable (status ${status}). Falling back to next model.`);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw lastError || new Error("All Groq models failed.");
+  } finally {
+    releaseGroqKey(apiKey);
   }
-
-  const model = "llama-3.3-70b-versatile";
-  
-  const messages: any[] = [];
-  if (systemInstruction) {
-    messages.push({ role: "system", content: systemInstruction });
-  }
-  messages.push({ role: "user", content: prompt });
-
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      response_format: jsonMode ? { type: "json_object" } : undefined,
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq API returned status ${response.status}: ${errText}`);
-  }
-
-  const data = await response.json() as any;
-  return data.choices?.[0]?.message?.content || "";
 }
 
 // Helper to retry asynchronous operations with exponential backoff on 429/rate limits
@@ -357,70 +409,67 @@ function processLrcLibResponse(data: any, defaultDuration?: number): { lyrics: s
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3001;
 
   // Middleware for body parsing
   app.use(express.json({ limit: "10mb" }));
+
+  // Disable caching so the browser always fetches the latest frontend on dev reload
+  app.use((req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+  });
 
   // API Route: Health Check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
   });
 
-   // API Route: Identify Song Title, Artist & Album from Filename/Clutter and fetch Album Cover via iTunes
+   // API Route: Identify Song Title, Artist & Album from the raw filename using Groq (multi-key, parallel-friendly); iTunes only for album artwork.
+  // Optional user-confirmed hints { title?, artist?, album? } are treated as GROUND TRUTH (typed manually by the user),
+  // so Groq refines/backfills only the remaining unknown fields. This powers interactive in-place correction
+  // (edit the artist -> Groq re-runs with that artist confirmed and finishes the rest).
   app.post("/api/songs/identify", async (req, res) => {
     try {
-      const { filename } = req.body;
+      const { filename, title, artist, album } = req.body;
       if (!filename) {
         res.status(400).json({ error: "Filename is required" });
         return;
       }
 
-      console.log(`[Identify] Raw filename request: "${filename}"`);
-      const localClean = cleanFilenameLocally(filename);
-      console.log(`[Identify] Local clean: title="${localClean.title}", artist="${localClean.artist}"`);
+      // User-confirmed fields are ground truth — never overwritten by Groq.
+      const hintTitle = typeof title === "string" && title.trim() ? title.trim() : "";
+      const hintArtist = typeof artist === "string" && artist.trim() && artist !== "Unknown Artist" ? artist.trim() : "";
+      const hintAlbum = typeof album === "string" && album.trim() && album !== "Unknown Album" ? album.trim() : "";
+      const hasHints = !!(hintTitle || hintArtist || hintAlbum);
 
-      let finalTitle = localClean.title;
-      let finalArtist = localClean.artist;
-      let finalAlbum = "Unknown Album";
-      let finalAlbumCover = "";
-      let foundOniTunes = false;
-
-      // STEP 1: Fast direct lookup on iTunes Search API (instant, saves Gemini quota)
-      try {
-        const query = localClean.cleanQuery;
-        const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
-        const searchResponse = await fetch(searchUrl);
-        if (searchResponse.ok) {
-          const searchData: any = await searchResponse.json();
-          if (searchData && searchData.results && searchData.results.length > 0) {
-            const item = searchData.results[0];
-            const isConf = isConfidentMatch(localClean.title, item.trackName || "");
-            
-            if (isConf) {
-              finalTitle = item.trackName || finalTitle;
-              finalArtist = item.artistName || finalArtist;
-              finalAlbum = item.collectionName || "Unknown Album";
-              if (item.artworkUrl100) {
-                finalAlbumCover = item.artworkUrl100.replace("100x100bb", "600x600bb");
-              }
-              foundOniTunes = true;
-              console.log(`[Identify] Confident direct iTunes match: "${finalTitle}" by "${finalArtist}"`);
-            } else {
-              console.log(`[Identify] Direct iTunes match found ("${item.trackName}" by "${item.artistName}"), but failed confidence check with local title "${localClean.title}". Proceeding to Gemini fallback...`);
-            }
-          }
-        }
-      } catch (iTunesError) {
-        console.warn("[Identify] Direct iTunes lookup failed:", iTunesError);
+      if (hasHints) {
+        console.log(`[Identify] Refine request: "${filename}" with confirmed hints ${JSON.stringify({ title: hintTitle, artist: hintArtist, album: hintAlbum })}`);
+      } else {
+        console.log(`[Identify] Raw filename request: "${filename}"`);
       }
 
-      // STEP 2: Smart AI parse fallback if direct iTunes search yielded nothing or failed confidence check
-      if (!foundOniTunes) {
-        console.log(`[Identify] Calling Groq parsing fallback...`);
-        try {
-          const userPrompt = `Analyze the audio file name: "${filename}"
-Identify the correct official song details.
+      // NO local filename cleaning — Groq does ALL the name resolution from the raw, cluttered filename.
+      // Fallbacks: user-confirmed values win; otherwise raw name without extension / unknowns.
+      let finalTitle = hintTitle || filename.replace(/\.[^/.]+$/, "");
+      let finalArtist = hintArtist || "Unknown Artist";
+      let finalAlbum = hintAlbum || "Unknown Album";
+      let finalAlbumCover = "";
+
+      // STEP 1: Groq extracts/refines title/artist/album immediately (uses one of the pooled keys)
+      try {
+        let userPrompt = `Analyze the audio file name: "${filename}"`;
+
+        if (hasHints) {
+          userPrompt += `\n\nThe user has already confirmed/corrected the following fields. Treat every non-empty value below as 100% GROUND TRUTH — never change, rewrite or second-guess them:
+- title: ${hintTitle ? `"${hintTitle}"` : "(unknown — determine me from the filename)"}
+- artist: ${hintArtist ? `"${hintArtist}"` : "(unknown — determine me from the filename)"}
+- album: ${hintAlbum ? `"${hintAlbum}"` : "(unknown — determine me from the filename)"}`;
+        }
+
+        userPrompt += `\nIdentify the correct official song details.
 
 Note: many of these files are actually music videos that were saved/converted to .mp3,
 so the filename is often very long and cluttered, e.g. containing things like
@@ -433,7 +482,10 @@ We need:
 2. "artist": The primary official artist or singer(s) (e.g., "Harris Jayaraj" or "Arijit Singh").
 3. "album": The official album/movie name (e.g., "Ayan" or "Dilwale" or "Aashiqui 2").
 
-Make sure to strip any web downloader prefixes, suffixes, bitrates, years, or site names (like MassTamilan, Isaimini, Pagalworld, etc.).
+Make sure to strip ANY of the following from the final title/artist/album:
+- leading track/index numbers (e.g. "01 - Song Name" => title is "Song Name", NOT "01 - Song Name")
+- web downloader prefixes/suffixes, bitrates, upload years, resolution tags, and site names (MassTamilan, Isaimini, Pagalworld, etc.)
+The official title NEVER starts with the track number, a year, or a site name.
 Return your output as a valid JSON object matching the schema:
 {
   "title": "...",
@@ -441,53 +493,46 @@ Return your output as a valid JSON object matching the schema:
   "album": "..."
 }`;
 
-          let responseText = "";
-          try {
-            console.log(`[Identify] Attempting Groq call...`);
-            responseText = await callWithRetry(async () => {
-              return await callGroqAPI(
-                userPrompt,
-                true,
-                "You are an expert music metadata analyzer. You MUST extract the song Title, Artist, and Album name. Output matching the requested JSON schema. Do not include any explanations outside of the schema."
-              );
-            });
-          } catch (groqError: any) {
-            console.warn(`[Identify] Groq call failed: ${groqError.message || groqError}.`);
-          }
-
+        await callWithRetry(async () => {
+          const responseText = await callGroqAPI(
+            userPrompt,
+            true,
+            "You are an expert music metadata analyzer. Honor any user-confirmed fields EXACTLY as given - never modify them. Fill in every remaining unknown field from the filename. Output matching the requested JSON schema with NO explanations outside the schema."
+          );
           if (responseText) {
             const identifiedData = JSON.parse(responseText.trim());
             console.log(`[Identify] Groq parsed:`, identifiedData);
-            if (identifiedData.title) finalTitle = identifiedData.title;
-            if (identifiedData.artist) finalArtist = identifiedData.artist;
-            if (identifiedData.album) finalAlbum = identifiedData.album;
-
-            // Search iTunes again with the high-quality Groq extracted metadata to fetch the album artwork
-            try {
-              const query = `${finalTitle} ${finalArtist}`.trim();
-              const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
-              const searchResponse = await fetch(searchUrl);
-              if (searchResponse.ok) {
-                const searchData: any = await searchResponse.json();
-                if (searchData && searchData.results && searchData.results.length > 0) {
-                  const item = searchData.results[0];
-                  if (item.artworkUrl100) {
-                    finalAlbumCover = item.artworkUrl100.replace("100x100bb", "600x600bb");
-                  }
-                  // Backfill album name if missing or unknown
-                  if (finalAlbum === "Unknown Album" && item.collectionName) {
-                    finalAlbum = item.collectionName;
-                  }
-                  console.log(`[Identify] iTunes match after Groq: artwork found for "${finalTitle}"`);
-                }
-              }
-            } catch (innerITunesError) {
-              console.warn("[Identify] iTunes match after Groq failed:", innerITunesError);
-            }
+            // User-confirmed hints always win; Groq fills only what is still unknown.
+            if (!hintTitle && identifiedData.title) finalTitle = identifiedData.title;
+            if (!hintArtist && identifiedData.artist) finalArtist = identifiedData.artist;
+            if (!hintAlbum && identifiedData.album) finalAlbum = identifiedData.album;
           }
-        } catch (groqError: any) {
-          console.warn("[Identify] Smart Groq fallback failed, using local clean info only:", groqError);
+        });
+      } catch (groqError: any) {
+        console.warn(`[Identify] Groq failed${hasHints ? " (user hints kept intact)" : ""}:`, groqError.message || groqError);
+      }
+
+      // STEP 2: iTunes Search ONLY for album artwork, using the resolved metadata
+      try {
+        const query = `${finalTitle} ${finalArtist}`.trim();
+        const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
+        const searchResponse = await fetch(searchUrl);
+        if (searchResponse.ok) {
+          const searchData: any = await searchResponse.json();
+          if (searchData && searchData.results && searchData.results.length > 0) {
+            const item = searchData.results[0];
+            if (item.artworkUrl100) {
+              finalAlbumCover = item.artworkUrl100.replace("100x100bb", "600x600bb");
+            }
+            // Backfill album name if missing or unknown (only if the user did NOT confirm album)
+            if (!hintAlbum && finalAlbum === "Unknown Album" && item.collectionName) {
+              finalAlbum = item.collectionName;
+            }
+            console.log(`[Identify] iTunes artwork found for "${finalTitle}"`);
+          }
         }
+      } catch (iTunesError) {
+        console.warn("[Identify] iTunes artwork lookup failed:", iTunesError);
       }
 
       res.json({
@@ -831,26 +876,105 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
     }
   });
 
-  // Vite middleware for development, static assets for production
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+  // Production mode when explicitly requested via NODE_ENV=production, OR when the
+  // compiled bundle (dist/server.cjs via `npm start`) is running. This matters because
+  // `npm start` does not set NODE_ENV; without detection it would wrongly boot the dev
+  // branch (spinning up a Vite server instead of serving the built dist).
+  const runningCompiledBundle =
+    process.argv[1] && /[\\/]dist[\\/]server\.(cjs|js)$/i.test(process.argv[1]);
+  const isProduction = process.env.NODE_ENV === "production" || runningCompiledBundle;
+
+  if (!isProduction) {
+    // ===== DEVELOPMENT =====
+    // The Express app above only exposes API routes. In dev we run the Express
+    // API on a separate port (3002) and let the standalone Vite dev server own
+    // port 3001 with full HMR / hot-reload. Vite proxies /api/* to Express.
+    const API_PORT = 3002;
+    app.listen(API_PORT, "0.0.0.0", () => {
+      console.log(`API server running on port ${API_PORT}`);
+    }).on("error", (err: any) => {
+      if (err?.code === "EADDRINUSE") {
+        console.error(`Port ${API_PORT} is already in use. Is another instance of the server running?`);
+      } else {
+        console.error("Failed to start API server:", err);
+      }
+      process.exit(1);
     });
-    app.use(vite.middlewares);
-    console.log("Vite development server middleware integrated.");
+
+    const vite = await createViteServer({
+      root: process.cwd(),
+      appType: "spa",
+      server: {
+        port: PORT,
+        strictPort: true,
+        host: "0.0.0.0",
+        proxy: {
+          "/api": {
+            target: `http://localhost:${API_PORT}`,
+            changeOrigin: true,
+          },
+        },
+        hmr: true,
+      },
+    });
+
+    await vite.listen();
+    vite.printUrls();
+
+    // Robustness: a browser/client disconnecting abruptly mid-request (ECONNRESET,
+    // aborted handshake, etc.) can emit an unhandled 'error' on the underlying socket
+    // and crash the whole Node process. Attach swallow handlers so a single bad client
+    // can never take down the dev server (which the HMR websocket relies on).
+    try {
+      const httpServer = (vite as any).httpServer;
+      if (httpServer) {
+        httpServer.on("error", (err: any) => {
+          console.warn("[dev] HTTP server error (swallowed):", err?.message || err);
+        });
+        httpServer.on("clientError", (err: any, socket: any) => {
+          console.warn("[dev] clientError (swallowed):", err?.message || err);
+          try { socket.destroy(); } catch {}
+        });
+        httpServer.on("connection", (socket: any) => {
+          socket.on("error", (err: any) => {
+            // Swallow benign disconnects like ECONNRESET
+            if (err && (err.code === "ECONNRESET" || err.code === "ECONNREFUSED" || err.code === "EPIPE")) return;
+            console.warn("[dev] socket error (swallowed):", err?.message || err);
+          });
+        });
+        console.log("[dev] Socket error hardening installed on Vite server.");
+      }
+    } catch (e) {
+      console.warn("[dev] Could not install socket hardening:", e);
+    }
+
+    const shutdown = async () => {
+      console.log("\nShutting down dev server...");
+      await vite.close();
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } else {
+    // ===== PRODUCTION =====
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
     console.log("Serving static production assets from:", distPath);
-  }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
+    }).on("error", (err: any) => {
+      if (err?.code === "EADDRINUSE") {
+        console.error(`Port ${PORT} is already in use. Is another instance of the server running?`);
+      } else {
+        console.error("Failed to start server:", err);
+      }
+      process.exit(1);
+    });
+  }
 }
 
 startServer();

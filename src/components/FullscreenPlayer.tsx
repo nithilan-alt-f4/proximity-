@@ -1,24 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAudio } from "../context/AudioContext";
+import type { Song } from "../lib/db";
 import { Visualizer } from "./Visualizer";
+import { QueueManager } from "./QueueManager";
 import {
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Repeat1,
-  Volume2, VolumeX, ArrowDown, Layers, ListMusic, ChevronRight,
+  Volume2, VolumeX, ArrowDown, Layers, ListMusic,
+  Sun, Moon,
 } from "lucide-react";
 
 interface FullscreenPlayerProps {
   onClose: () => void;
+  isDark?: boolean;
+  onToggleTheme?: () => void;
 }
 
 type TranslationLang = "original" | "english" | "hindi" | "tamil";
-type LayoutMode = "lyrics" | "centered" | "viz";
+type LayoutMode = "lyrics" | "centered" | "viz" | "stacked";
 
-export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) => {
+export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose, isDark, onToggleTheme }) => {
   const {
     currentSong, isPlaying, currentTime, duration, volume, isMuted,
     shuffle, repeat, togglePlay, seek, nextSong, prevSong,
     toggleShuffle, setRepeatMode, setVolumeLevel, toggleMute,
-    queue, queueIndex, playNext, addToQueue, songs,
+    queue, queueIndex, songs, playSong, setQueue,
   } = useAudio();
 
   const hasLyrics = (currentSong?.syncedLyrics?.length ?? 0) > 0;
@@ -28,12 +33,13 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
   const [translating, setTranslating] = useState(false);
   const [lyricsOffset, setLyricsOffset] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
+  const [sideW, setSideW] = useState(0.92);
   const scrollRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
   const lyricsRef = useRef<HTMLDivElement>(null);
   const vizRef = useRef<HTMLDivElement>(null);
-  const queueMenuRef = useRef<HTMLDivElement>(null);
+  const isResizingRef = useRef(false);
 
   // Auto-switch layout when no lyrics
   useEffect(() => {
@@ -57,16 +63,6 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
     timers.push(setTimeout(() => vizRef.current?.classList.add("fs-in"), 200));
     return () => timers.forEach(clearTimeout);
   }, []);
-
-  // Close queue menu on outside click
-  useEffect(() => {
-    if (!showQueue) return;
-    const close = (e: MouseEvent) => {
-      if (queueMenuRef.current && !queueMenuRef.current.contains(e.target as Node)) setShowQueue(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [showQueue]);
 
   // Translation
   const handleTranslate = useCallback(async (lang: string) => {
@@ -125,6 +121,34 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
     container.scrollTo({ top: container.scrollTop + offset, behavior: "smooth" });
   }, [activeLineIndex]);
 
+  // Compute distance from active line for each lyric line (-1 = far above, 0 = active, 1 = far below)
+  const getLineDistance = (idx: number): number => {
+    if (activeLineIndex === -1) return 3;
+    return Math.abs(idx - activeLineIndex);
+  };
+
+  // Get dynamic style for a lyric line based on distance from active
+  // Dark mode: red glow + gradient fill on active, soft depth-of-field on inactive
+  // Light mode: bold ink + red left accent on active, aggressive dim/blur on inactive
+  const getLineStyles = (idx: number): React.CSSProperties => {
+    const dist = getLineDistance(idx);
+    const base = "all 400ms var(--ease-mechanical)";
+
+    if (isDark) {
+      // ── Dark mode ──
+      if (dist === 0) return { opacity: 1, transform: "scale(1)", filter: "blur(0px)", textShadow: "0 0 20px var(--red), 0 0 40px rgba(200,30,30,0.3)", transition: base };
+      if (dist === 1) return { opacity: 0.65, transform: "scale(0.96)", filter: "blur(0.3px)", textShadow: "none", transition: base };
+      if (dist === 2) return { opacity: 0.35, transform: "scale(0.93)", filter: "blur(0.7px)", textShadow: "none", transition: base };
+      return { opacity: 0.15, transform: "scale(0.91)", filter: "blur(1.2px)", textShadow: "none", transition: base };
+    }
+
+    // ── Light mode ──
+    if (dist === 0) return { opacity: 1, transform: "scale(1)", filter: "blur(0px)", textShadow: "none", transition: base };
+    if (dist === 1) return { opacity: 0.45, transform: "scale(0.97)", filter: "blur(0.2px)", textShadow: "none", transition: base };
+    if (dist === 2) return { opacity: 0.2, transform: "scale(0.94)", filter: "blur(0.6px)", textShadow: "none", transition: base };
+    return { opacity: 0.08, transform: "scale(0.92)", filter: "blur(1px)", textShadow: "none", transition: base };
+  };
+
   const formatTime = (s: number): string => {
     if (isNaN(s)) return "0:00";
     const m = Math.floor(s / 60);
@@ -143,8 +167,25 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
     e.stopPropagation();
   }, []);
 
-  // Queue items: next up songs
-  const upcomingSongs = queue.slice(queueIndex + 1).slice(0, 8);
+  // Sidebar resize between player and lyrics/viz column
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    const startX = e.clientX;
+    const startW = sideW;
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = (ev.clientX - startX) / window.innerWidth;
+      setSideW(Math.max(0.4, Math.min(0.8, startW + delta)));
+    };
+    const onUp = () => {
+      isResizingRef.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sideW]);
 
   if (!currentSong) return null;
 
@@ -234,51 +275,99 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
           />
         </div>
 
-        {/* Queue button */}
-        <div className="fs-queue-wrap" ref={queueMenuRef}>
-          <button className="fs-btn-icon" onClick={() => setShowQueue(!showQueue)} title="Queue">
-            <ListMusic size={14} />
-          </button>
-          {showQueue && (
-            <div className="fs-queue-menu">
-              <div className="fs-queue-header">
-                <span className="micro-label">UP NEXT</span>
-              </div>
-              {upcomingSongs.length === 0 ? (
-                <div className="fs-queue-empty">Queue empty</div>
-              ) : (
-                upcomingSongs.map((song, i) => (
-                  <div key={song.id + i} className="fs-queue-item">
-                    <span className="fs-queue-idx">{String(i + 1).padStart(2, "0")}</span>
-                    <div className="fs-queue-info">
-                      <span className="fs-queue-title">{song.title}</span>
-                      <span className="fs-queue-artist">{song.artist}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-              {currentSong && (
-                <div className="fs-queue-actions">
-                  <button className="fs-queue-action" onClick={() => { playNext(currentSong); setShowQueue(false); }}>
-                    <SkipForward size={12} /> PLAY NEXT
-                  </button>
-                  <button className="fs-queue-action" onClick={() => { addToQueue(currentSong); setShowQueue(false); }}>
-                    <ChevronRight size={12} /> ADD TO END
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Queue button - opens full QueueManager drawer */}
+        <button 
+          className="fs-btn-icon" 
+          onClick={() => setShowQueue(!showQueue)} 
+          title="Queue"
+        >
+          <ListMusic size={14} />
+        </button>
       </div>
     </div>
   );
 
+  const lyricsPanel = layout === "lyrics" || layout === "stacked" ? (
+    <div className="fs-lyrics" ref={lyricsRef}>
+      <div className="fs-lyrics-controls">
+        <div className="fs-offset">
+          <button onClick={() => setLyricsOffset((o) => o - 0.5)}>-</button>
+          <span className="fs-offset-val">
+            {lyricsOffset > 0 ? "+" : ""}{lyricsOffset.toFixed(1)}s
+          </span>
+          <button onClick={() => setLyricsOffset((o) => o + 0.5)}>+</button>
+          {lyricsOffset !== 0 && (
+            <button className="fs-offset-rst" onClick={() => setLyricsOffset(0)}>RST</button>
+          )}
+        </div>
+        <div className="fs-translation">
+          {(["original", "english", "hindi", "tamil"] as TranslationLang[]).map((lang) => (
+            <button
+              key={lang}
+              className={`fs-translation-btn ${translationLang === lang ? "fs-translation-btn-active" : ""}`}
+              onClick={() => handleLangChange(lang)}
+            >
+              {lang === "original" ? "ORIG" : lang === "english" ? "EN" : lang === "hindi" ? "HI" : "TA"}
+            </button>
+          ))}
+        </div>
+        {translating && (
+          <span className="fs-translating">TRANSLATING...</span>
+        )}
+      </div>
+
+      <div
+        className="fs-lyrics-scroll"
+        ref={scrollRef}
+        onWheel={handleLyricsWheel}
+      >
+        {displayLyrics.length === 0 ? (
+          <div className="fs-empty">
+            <Layers size={32} />
+            <span className="micro-label">NO SYNCED LYRICS</span>
+          </div>
+        ) : (
+          displayLyrics.map((line, idx) => {
+            const isActive = idx === activeLineIndex;
+            const dist = getLineDistance(idx);
+            const lineStyles = getLineStyles(idx);
+            return (
+              <button
+                key={idx}
+                id={`fs-lyric-${idx}`}
+                onClick={() => seek(line.time + lyricsOffset + 0.05)}
+                className={`fs-lyric ${isActive ? "fs-lyric-active" : ""}`}
+                style={lineStyles}
+              >
+                <span className="fs-lyric-text">{line.text}</span>
+                {line.translation && (
+                  <span className="fs-lyric-translation" style={{ opacity: isActive ? 0.7 : 0.3 }}>
+                    {line.translation}
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  const vizPanel = layout === "viz" || layout === "stacked" ? (
+    <div className="fs-viz-col" ref={vizRef}>
+      <Visualizer />
+    </div>
+  ) : null;
+
   return (
     <div className="fs-shell" onWheel={handleLyricsWheel}>
+      <div className="fs-bg-drift" />
       {/* ── Topbar ──────────────────────────────── */}
       <div className="fs-topbar" ref={topbarRef}>
-        <div />
+        <div className="fs-brand">
+          <span className="brand-mark" aria-hidden="true">P+</span>
+          <span className="micro-label">PROXIMITY+</span>
+        </div>
         <div className="fs-layout-bar">
           {hasLyrics && (
             <button
@@ -294,20 +383,51 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
           >
             CENTERED
           </button>
-          <button
-            className={`fs-layout-btn ${layout === "viz" ? "fs-layout-btn-active" : ""}`}
-            onClick={() => setLayout("viz")}
-          >
-            REC + VIZ
+            <button
+              className={`fs-layout-btn ${layout === "viz" ? "fs-layout-btn-active" : ""}`}
+              onClick={() => setLayout("viz")}
+            >
+              REC + VIZ
+            </button>
+            {hasLyrics && (
+              <button
+                className={`fs-layout-btn ${layout === "stacked" ? "fs-layout-btn-active" : ""}`}
+                onClick={() => setLayout("stacked")}
+              >
+                LRC + VIZ
+              </button>
+            )}
+          </div>
+        <div className="fs-topbar-right">
+          <div className="fs-readout">
+            <span className="micro-label">NOW SPINNING / {queueIndex + 1}</span>
+            <span className="fs-readout-divider" />
+            <span className="micro-label">{queue.length} CUTS LOADED</span>
+          </div>
+          {onToggleTheme && (
+            <button
+              onClick={onToggleTheme}
+              className="fs-close"
+              style={{ marginRight: 6 }}
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          )}
+          <button onClick={onClose} className="fs-close" aria-label="Close fullscreen">
+            <ArrowDown size={16} />
           </button>
         </div>
-        <button onClick={onClose} className="fs-close" aria-label="Close fullscreen">
-          <ArrowDown size={16} />
-        </button>
       </div>
 
       {/* ── Stage ───────────────────────────────── */}
-      <div className="fs-stage" data-mode={layout}>
+      <div
+        className={`fs-stage`}
+        data-mode={layout}
+        style={{ "--fs-side": `${sideW}fr` } as any}
+      >
+        <div className="fs-side-resize-handle" onMouseDown={onResizeStart} style={{ left: `${(100 / (1 + sideW))}%` }} />
 
         {/* Player Column */}
         <div className="fs-player" ref={playerRef}>
@@ -322,71 +442,14 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose }) =
         </div>
 
         {/* Lyrics Column */}
-        {layout === "lyrics" && (
-          <div className="fs-lyrics" ref={lyricsRef}>
-            <div className="fs-lyrics-controls">
-              <div className="fs-offset">
-                <button onClick={() => setLyricsOffset((o) => o - 0.5)}>\u2212</button>
-                <span className="fs-offset-val">
-                  {lyricsOffset > 0 ? "+" : ""}{lyricsOffset.toFixed(1)}s
-                </span>
-                <button onClick={() => setLyricsOffset((o) => o + 0.5)}>+</button>
-                {lyricsOffset !== 0 && (
-                  <button className="fs-offset-rst" onClick={() => setLyricsOffset(0)}>RST</button>
-                )}
-              </div>
-              <div className="fs-translation">
-                {(["original", "english", "hindi", "tamil"] as TranslationLang[]).map((lang) => (
-                  <button
-                    key={lang}
-                    className={`fs-translation-btn ${translationLang === lang ? "fs-translation-btn-active" : ""}`}
-                    onClick={() => handleLangChange(lang)}
-                  >
-                    {lang === "original" ? "ORIG" : lang === "english" ? "EN" : lang === "hindi" ? "HI" : "TA"}
-                  </button>
-                ))}
-              </div>
-              {translating && (
-                <span className="fs-translating">TRANSLATING...</span>
-              )}
-            </div>
-
-            <div
-              className="fs-lyrics-scroll"
-              ref={scrollRef}
-              onWheel={handleLyricsWheel}
-            >
-              {displayLyrics.length === 0 ? (
-                <div className="fs-empty">
-                  <Layers size={32} />
-                  <span className="micro-label">NO SYNCED LYRICS</span>
-                </div>
-              ) : (
-                displayLyrics.map((line, idx) => (
-                  <button
-                    key={idx}
-                    id={`fs-lyric-${idx}`}
-                    onClick={() => seek(line.time + lyricsOffset + 0.05)}
-                    className={`fs-lyric ${idx === activeLineIndex ? "fs-lyric-active" : ""}`}
-                  >
-                    <span>{line.text}</span>
-                    {line.translation && (
-                      <span className="fs-lyric-translation">{line.translation}</span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
+        {(layout === "lyrics" || layout === "stacked") && lyricsPanel}
 
         {/* Visualizer Column */}
-        {layout === "viz" && (
-          <div className="fs-viz-col" ref={vizRef}>
-            <Visualizer />
-          </div>
-        )}
+        {(layout === "viz" || layout === "stacked") && vizPanel}
       </div>
+
+      {/* Queue drawer - slides in from right */}
+      {showQueue && <QueueManager onClose={() => setShowQueue(false)} />}
     </div>
   );
 };

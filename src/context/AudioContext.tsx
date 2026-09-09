@@ -41,6 +41,7 @@ interface AudioContextType {
   addSongToPlaylist: (songId: string, playlistId: string) => Promise<void>;
   removeSongFromPlaylist: (songId: string, playlistId: string) => Promise<void>;
   deleteSong: (id: string) => Promise<void>;
+  deleteAllSongs: () => Promise<void>;
   saveCustomEqProfile: (name: string, gains: number[]) => Promise<EqProfile>;
   deleteEqProfile: (id: string) => Promise<void>;
   setActivePlaylistId: (id: string | null) => void;
@@ -48,7 +49,10 @@ interface AudioContextType {
   updateSongMetadata: (songId: string, updates: { title?: string; artist?: string; album?: string; coverArt?: string }) => Promise<void>;
   setQueue: (queue: Song[]) => void;
   playNext: (song: Song) => void;
+  playAfter: (song: Song) => void;
   addToQueue: (song: Song) => void;
+  playPlaylist: (playlistId: string | null) => void;
+  updatePlaylistDescription: (playlistId: string, description: string) => Promise<void>;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -87,6 +91,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // a stale version of handleSongEnded that closes over the very first render's empty
   // queue/queueIndex/repeat state - which is why songs previously failed to autoplay.
   const handleSongEndedRef = useRef<() => void>(() => {});
+  // Track offset for sequential "PLAY AFTER" operations
+  const playAfterOffsetRef = useRef(0);
 
   // Initialize Audio Element
   useEffect(() => {
@@ -348,42 +354,60 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  // Change playlist selection
+  // Select a playlist (browse its tracks) WITHOUT auto-playing. The queue is set
+  // to the playlist's ordered tracks so that PLAY / a track click can start playback.
   const setActivePlaylistId = (playlistId: string | null) => {
     setActivePlaylistIdState(playlistId);
-    
-    let baseSongs = [...songs];
-    if (playlistId !== null) {
-      const pl = playlists.find((p) => p.id === playlistId);
-      if (pl) {
-        baseSongs = songs.filter((s) => pl.songIds.includes(s.id));
-        // Sort according to playlist order
-        baseSongs.sort((a, b) => pl.songIds.indexOf(a.id) - pl.songIds.indexOf(b.id));
-      } else {
-        baseSongs = [];
-      }
-    }
-
+    const baseSongs = orderByPlaylist(songs, playlists, playlistId);
     if (baseSongs.length > 0) {
       setQueue(baseSongs);
-      if (playlistId !== null) {
-        // Start playing songs from this playlist immediately
-        setCurrentSong(baseSongs[0]);
-        setQueueIndex(0);
-        setIsPlaying(true);
+      if (currentSong && playlistId !== null) {
+        const idx = baseSongs.findIndex((s) => s.id === currentSong.id);
+        setQueueIndex(idx >= 0 ? idx : -1);
       } else {
-        // If there's a current playing song that is in the new playlist, set index. Otherwise reset index.
-        if (currentSong) {
-          const idx = baseSongs.findIndex((s) => s.id === currentSong.id);
-          setQueueIndex(idx);
-        } else {
-          setQueueIndex(-1);
-        }
+        setQueueIndex(-1);
       }
     } else {
       setQueue([]);
       setQueueIndex(-1);
     }
+  };
+
+  // Build the ordered song list for a playlist (or all songs when playlistId is null)
+  const orderByPlaylist = (allSongs: Song[], allPlaylists: Playlist[], playlistId: string | null): Song[] => {
+    if (playlistId === null) {
+      return [...allSongs];
+    }
+    const pl = allPlaylists.find((p) => p.id === playlistId);
+    if (!pl) return [];
+    const inPl = allSongs.filter((s) => pl.songIds.includes(s.id));
+    return inPl.sort((a, b) => pl.songIds.indexOf(a.id) - pl.songIds.indexOf(b.id));
+  };
+
+  // Explicitly start playing a playlist (or all songs when playlistId is null)
+  const playPlaylist = (playlistId: string | null) => {
+    setActivePlaylistIdState(playlistId);
+    const list = orderByPlaylist(songs, playlists, playlistId);
+    setQueue(list);
+    if (list.length === 0) {
+      setQueueIndex(-1);
+      return;
+    }
+    setQueueIndex(0);
+    setCurrentSong(list[0]);
+    setIsPlaying(true);
+  };
+
+  const updatePlaylistDescription = async (playlistId: string, description: string) => {
+    let pl = playlists.find((p) => p.id === playlistId);
+    if (!pl) {
+      const allPl = await audioDb.getAllPlaylists();
+      pl = allPl.find((p) => p.id === playlistId);
+    }
+    if (!pl) return;
+    const updated = { ...pl, description };
+    await audioDb.savePlaylist(updated);
+    await loadPlaylists();
   };
 
   // Player controls
@@ -480,9 +504,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const nextSong = () => {
     if (queue.length === 0) return;
 
-    // Note: shuffle no longer re-randomizes on every call. When shuffle is turned on,
-    // the queue itself gets shuffled once (see toggleShuffle) and playback simply
-    // advances through that shuffled order sequentially, same as normal playback.
     let nextIdx = queueIndex + 1;
     if (nextIdx >= queue.length) {
       if (repeat === "all") {
@@ -633,6 +654,20 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActivePlaylistId(activePlaylistId);
   };
 
+  const deleteAllSongs = async () => {
+    // Get all songs and delete each one
+    const allSongs = await audioDb.getAllSongs();
+    for (const song of allSongs) {
+      await audioDb.deleteSong(song.id);
+    }
+    setCurrentSong(null);
+    setIsPlaying(false);
+    setQueue([]);
+    setQueueIndex(-1);
+    await loadSongs();
+    await loadPlaylists();
+  };
+
   const updateSongLyrics = async (songId: string, lyrics: string, syncedLyrics: any[], title?: string, artist?: string) => {
     const song = songs.find((s) => s.id === songId);
     if (!song) return;
@@ -738,6 +773,37 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  // Insert a song at currentIndex + 2 + offset (after "PLAY NEXT" slot)
+  // Sequential calls stack songs in order after the "PLAY NEXT" position
+  const playAfter = (song: Song) => {
+    if (!currentSong) {
+      playSong(song);
+      return;
+    }
+
+    setQueue((prevQueue) => {
+      const withoutSong = prevQueue.filter((s) => s.id !== song.id);
+      const currentIdx = withoutSong.findIndex((s) => s.id === currentSong.id);
+      
+      // Increment offset for each subsequent "play after"
+      playAfterOffsetRef.current += 1;
+      const insertAt = currentIdx === -1 ? 1 : currentIdx + 1 + playAfterOffsetRef.current;
+
+      const updated = [...withoutSong];
+      updated.splice(insertAt, 0, song);
+
+      const newCurrentIdx = updated.findIndex((s) => s.id === currentSong.id);
+      setQueueIndex(newCurrentIdx);
+
+      return updated;
+    });
+  };
+
+  // Reset playAfter offset when song changes
+  useEffect(() => {
+    playAfterOffsetRef.current = 0;
+  }, [currentSong?.id]);
+
   return (
     <AudioContext.Provider
       value={{
@@ -778,6 +844,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addSongToPlaylist,
         removeSongFromPlaylist,
         deleteSong,
+        deleteAllSongs,
         saveCustomEqProfile,
         deleteEqProfile,
         setActivePlaylistId,
@@ -785,7 +852,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateSongMetadata,
         setQueue: updateQueue,
         playNext,
+        playAfter,
         addToQueue,
+        playPlaylist,
+        updatePlaylistDescription,
       }}
     >
       {children}

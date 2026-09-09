@@ -3,7 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>proximity+</title>
+    <script>
+      // Theme initialization - runs before first paint to avoid FOUC.
+      // Three-state preference model:
+      //   - saved "dark"  -> set data-theme="dark"
+      //   - saved "light" -> set data-theme="light" (explicit, overrides OS)
+      //   - no preference -> follow prefers-color-scheme, else leave absent (base :root)
+      (function () {
+        try {
+          var saved = localStorage.getItem("proximity-theme");
+          var el = document.documentElement;
+          if (saved === "light") {
+            el.dataset.theme = "light";
+          } else if (saved === "dark") {
+            el.dataset.theme = "dark";
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            el.dataset.theme = "dark";
+          }
+        } catch (e) {
+          /* localStorage unavailable - fall back to base :root styles */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

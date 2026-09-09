@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useAudio } from "../context/AudioContext";
 import {
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX,
-  Shuffle, Repeat, Repeat1, Maximize2, Music, Sliders,
+  Shuffle, Repeat, Repeat1, Maximize2, Music,
 } from "lucide-react";
 
 interface MusicPlayerProps {
@@ -40,7 +40,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onOpenDrawer }) => {
           </div>
           <div className="control-copy">
             <span className="micro-label">NO TRACK LOADED</span>
-            <strong style={{ color: "#555" }}>SELECT A CUT</strong>
+            <strong style={{ color: "var(--text-secondary)" }}>SELECT A CUT</strong>
             <span>TO BEGIN PLAYBACK</span>
           </div>
         </div>
@@ -149,25 +149,9 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ onOpenDrawer }) => {
         />
       </div>
 
-      {/* Action Buttons */}
-      <div className="control-actions">
-        <button className={`control-icon ${onOpenDrawer ? "" : ""}`} onClick={() => onOpenDrawer?.("eq")} title="Equalizer">
-          <Sliders size={14} />
-        </button>
-        <button className="control-icon" onClick={() => onOpenDrawer?.("viz")} title="Visualizer">
-          <Activity size={14} />
-        </button>
-      </div>
+
     </div>
   );
 };
-
-function Activity({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
-  );
-}
 
 export default MusicPlayer;
