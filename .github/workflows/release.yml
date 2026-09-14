@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write .env with embedded keys
+        shell: bash
+        env:
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+        run: |
+          echo "GROQ_API_KEYS=${GROQ_API_KEYS}" > .env
+
+      - name: Lint (typecheck)
+        run: npm run lint
+
+      - name: Build web + server bundle
+        run: npm run build
+
+      - name: Verify keys embedded in bundle
+        shell: bash
+        run: |
+          COUNT=$(grep -o 'gsk_' dist/server.cjs | wc -l)
+          echo "Embedded Groq keys: $COUNT"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "::error::No Groq keys embedded in dist/server.cjs"
+            exit 1
+          fi
+
+      - name: Build Electron artifacts (installer + portable)
+        run: npx electron-builder --win --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            dist-desktop/*.exe
+            dist-desktop/latest.yml
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write .env with embedded keys
+        shell: bash
+        env:
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+        run: |
+          echo "GROQ_API_KEYS=${GROQ_API_KEYS}" > .env
+
+      - name: Lint (typecheck)
+        run: npm run lint
+
+      - name: Build web + server bundle
+        run: npm run build
+
+      - name: Verify keys embedded in bundle
+        shell: bash
+        run: |
+          COUNT=$(grep -o 'gsk_' dist/server.cjs | wc -l)
+          echo "Embedded Groq keys: $COUNT"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "::error::No Groq keys embedded in dist/server.cjs"
+            exit 1
+          fi
+
+      - name: Build Electron artifacts (dmg x64 + arm64)
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            dist-desktop/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.yml" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release/*

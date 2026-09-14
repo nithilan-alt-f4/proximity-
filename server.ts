@@ -1,15 +1,25 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
+// NOTE: vite is imported lazily inside the dev branch below. The production
+// bundle (dist/server.cjs) must never require vite — the packaged desktop app
+// does not ship it.
 // Load environment variables in development
 dotenv.config();
+
+// ---- Build-time key embedding ----
+// EMBEDDED_GROQ_KEYS is injected by the release build (esbuild --define) from
+// a CI secret. It ships inside dist/server.cjs so the desktop app works out of
+// the box — no .env, no user setup. Local dev still uses .env (GROQ_API_KEYS).
+declare const EMBEDDED_GROQ_KEYS: string;
 
 // ---- Multi-key Groq pool ----
 // GROQ_API_KEYS holds a comma-separated list of keys (e.g. "key1,key2,key3").
 // Each key is a separate Groq account with its own rate limits, so concurrent
 // requests are spread across ALL keys — every key works on a different song at once.
-const GROQ_KEYS = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
+// Priority: env (.env / CI) → embedded build-time keys.
+const envKeys = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "").trim();
+const GROQ_KEYS = (envKeys || (typeof EMBEDDED_GROQ_KEYS === "string" ? EMBEDDED_GROQ_KEYS : ""))
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);
@@ -409,7 +419,8 @@ function processLrcLibResponse(data: any, defaultDuration?: number): { lyrics: s
 
 async function startServer() {
   const app = express();
-  const PORT = 3001;
+  // In production (including Electron), the port can be overridden via PORT env.
+  const PORT = Number(process.env.PORT) || 3001;
 
   // Middleware for body parsing
   app.use(express.json({ limit: "10mb" }));
@@ -514,7 +525,9 @@ Return your output as a valid JSON object matching the schema:
 
       // STEP 2: iTunes Search ONLY for album artwork, using the resolved metadata
       try {
-        const query = `${finalTitle} ${finalArtist}`.trim();
+        // Multi-artist strings like "A, B" return 0 results on iTunes — use the first artist only
+        const primaryArtist = finalArtist.split(",")[0].trim();
+        const query = `${finalTitle} ${primaryArtist}`.trim();
         const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`;
         const searchResponse = await fetch(searchUrl);
         if (searchResponse.ok) {
@@ -901,7 +914,7 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
       process.exit(1);
     });
 
-    const vite = await createViteServer({
+    const vite = await (await import("vite")).createServer({
       root: process.cwd(),
       appType: "spa",
       server: {
@@ -957,15 +970,21 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
     process.on("SIGTERM", shutdown);
   } else {
     // ===== PRODUCTION =====
-    const distPath = path.join(process.cwd(), "dist");
+    // The bundle (dist/server.cjs) sits INSIDE dist/ next to index.html, so its
+    // own directory is the static root. This also works inside Electron's asar
+    // archive regardless of process.cwd().
+    const distPath = __dirname;
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
     console.log("Serving static production assets from:", distPath);
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
+    // Loopback only: the packaged desktop app embeds working API keys, so the
+    // server must never be reachable from the network.
+    const HOST = process.env.HOST || "127.0.0.1";
+    app.listen(PORT, HOST, () => {
+      console.log(`Server running on ${HOST}:${PORT}`);
     }).on("error", (err: any) => {
       if (err?.code === "EADDRINUSE") {
         console.error(`Port ${PORT} is already in use. Is another instance of the server running?`);
