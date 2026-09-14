@@ -44,11 +44,16 @@ app.whenReady().then(async () => {
     const bs = getComputedStyle(card).boxShadow;
     ok("card-hard-shadow", bs !== "none" && bs.includes("rgb(0, 0, 0)"), bs.slice(0, 50));
 
-    // 6. Download buttons: enabled, correct colors
+    // 6. Download buttons: enabled, correct colors, keyboard-reachable
     const btn = document.getElementById("dl-win-setup");
     const bCol = getComputedStyle(btn).backgroundColor;
     ok("btn-ink-bg", bCol === "rgb(0, 0, 0)", bCol);
     ok("btn-enabled", btn.getAttribute("aria-disabled") === null);
+    ok("btn-tabindex-restored", btn.getAttribute("tabindex") === "0", "tabindex=" + btn.getAttribute("tabindex"));
+    ok("btn-real-fallback", btn.href.includes("nithilan-alt-f4/proximity-"), btn.href.slice(0, 60));
+
+    // 6b. Card headings are real h2s (document outline)
+    ok("card-h2-headings", document.querySelectorAll(".dl-head h2.os").length === 2);
 
     // 7. Buttons inside dl-body elevated via translateZ (preserve-3d chain)
     const body = document.querySelector("#card-win .dl-body");

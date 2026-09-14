@@ -313,6 +313,8 @@
       transition: transform .9s var(--ease-mechanical);
       will-change: transform;
     }
+    /* While the pointer is being tracked, per-frame transforms must be instant. */
+    .tilting { transition: none !important; }
     .plate {
       position: absolute;
       inset: 0;
@@ -433,6 +435,7 @@
     }
     .dl-head .micro-label { white-space: normal; }
     .dl-head .os {
+      margin: 0;
       font-size: 19px;
       font-weight: 800;
       letter-spacing: -.03em;
@@ -676,7 +679,7 @@
         <article class="dl-card" id="card-win">
           <div class="dl-card-plate" aria-hidden="true"></div>
           <div class="dl-head">
-            <span class="os">WINDOWS</span>
+            <h2 class="os">WINDOWS</h2>
             <span class="micro-label">WIN 10 / 11 · 64-BIT</span>
           </div>
           <div class="dl-body">
@@ -685,8 +688,8 @@
               Windows may flag the unsigned build: <b>More info → Run anyway</b>.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-win-setup" href="#" aria-disabled="true">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
-              <a class="btn ghost" id="dl-win-portable" href="#" aria-disabled="true">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
+              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
+              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">NO ADMIN REQUIRED · PORTABLE = SINGLE FILE</span>
@@ -700,7 +703,7 @@
         <article class="dl-card" id="card-mac">
           <div class="dl-card-plate" aria-hidden="true"></div>
           <div class="dl-head">
-            <span class="os">MACOS</span>
+            <h2 class="os">MACOS</h2>
             <span class="micro-label">DMG · TWO CHIPS</span>
           </div>
           <div class="dl-body">
@@ -709,8 +712,8 @@
               Unsigned build — right-click the app and <b>Open</b> the first launch.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-mac-arm" href="#" aria-disabled="true">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
-              <a class="btn ghost" id="dl-mac-intel" href="#" aria-disabled="true">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
+              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
+              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">M1 / M2 / M3 / M4 · OR LEGACY INTEL</span>
@@ -757,7 +760,7 @@
       };
       var setHref = function (id, url) {
         var el = document.getElementById(id);
-        if (el) { el.href = url; el.removeAttribute("aria-disabled"); }
+        if (el) { el.href = url; el.removeAttribute("aria-disabled"); el.setAttribute("tabindex", "0"); }
       };
 
       fetch(API, { headers: { "Accept": "application/vnd.github+json" } })
@@ -812,7 +815,7 @@
           var all = ["dl-win-setup", "dl-win-portable", "dl-mac-arm", "dl-mac-intel"];
           for (var i = 0; i < all.length; i++) {
             var el = document.getElementById(all[i]);
-            if (el) { el.href = FALLBACK; el.removeAttribute("aria-disabled"); }
+            if (el) { el.href = FALLBACK; el.removeAttribute("aria-disabled"); el.setAttribute("tabindex", "0"); }
           }
           var vr = document.getElementById("ver-readout");
           if (vr) vr.textContent = "GITHUB";
@@ -822,6 +825,13 @@
       function attachTilt(zoneEl, targetEl, maxDeg, baseRot) {
         if (!zoneEl || !targetEl || reduceMotion || !window.matchMedia("(pointer: fine)").matches) return;
         var raf = null;
+        var resting = true;
+        // While actively tracking the pointer, kill the transition so per-frame
+        // transforms are instant; restore it only for the snap-back on leave.
+        zoneEl.addEventListener("pointerenter", function () {
+          resting = false;
+          targetEl.classList.add("tilting");
+        });
         zoneEl.addEventListener("pointermove", function (e) {
           var rect = zoneEl.getBoundingClientRect();
           var px = (e.clientX - rect.left) / rect.width - 0.5;
@@ -836,6 +846,8 @@
           });
         });
         zoneEl.addEventListener("pointerleave", function () {
+          resting = true;
+          targetEl.classList.remove("tilting");
           targetEl.style.transform = "";
         });
       }
@@ -851,6 +863,9 @@
         (function (card) {
           if (reduceMotion || !window.matchMedia("(pointer: fine)").matches) return;
           var raf = null;
+          card.addEventListener("pointerenter", function () {
+            card.classList.add("tilting");
+          });
           card.addEventListener("pointermove", function (e) {
             var rect = card.getBoundingClientRect();
             var px = (e.clientX - rect.left) / rect.width - 0.5;
@@ -863,6 +878,7 @@
             });
           });
           card.addEventListener("pointerleave", function () {
+            card.classList.remove("tilting");
             card.style.transform = "";
           });
         })(cards[c]);
