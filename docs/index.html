@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>proximity+ â€” download</title>
+  <title>proximity+ — download</title>
   <style>
     :root { color-scheme: dark; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -18,9 +18,7 @@
       padding: 2rem;
     }
     .wrap { max-width: 640px; width: 100%; }
-    .logo {
-      display: flex; align-items: center; gap: 14px; margin-bottom: 8px;
-    }
+    .logo { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
     .mark {
       width: 38px; height: 38px; border-radius: 9px;
       background: #e10600;
@@ -40,56 +38,104 @@
     }
     .card h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 2px; color: #e10600; margin-bottom: 6px; }
     .card p { color: #999; font-size: 13px; margin-bottom: 16px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
     .btn {
       display: inline-flex; align-items: center; gap: 8px;
       background: #e10600; color: #0a0a0a;
       font-weight: 700; font-size: 14px;
       padding: 11px 20px; border-radius: 8px;
       text-decoration: none;
-      transition: transform .12s ease, box-shadow .12s ease;
+      transition: transform .12s ease, box-shadow .12s ease, opacity .2s ease;
+      cursor: pointer; border: none;
     }
-    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(225,6,0,.4); }
-    .btn.ghost { background: transparent; color: #e5e5e5; border: 1px solid #333; margin-left: 10px; font-weight: 600; }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(225,6,0,.4); color: #0a0a0a; }
+    .btn[disabled] { opacity: .45; pointer-events: none; }
+    .btn.ghost { background: transparent; color: #e5e5e5; border: 1px solid #333; font-weight: 600; }
     .btn.ghost:hover { border-color: #e10600; color: #e10600; box-shadow: none; }
+    .size { color: #666; font-size: 11px; margin-left: 6px; font-weight: 400; }
     .foot { color: #555; font-size: 12px; margin-top: 32px; line-height: 1.7; }
     a { color: #e10600; }
-    @media (max-width: 560px) { .btn.ghost { margin-left: 0; margin-top: 10px; } }
+    @media (max-width: 560px) { .row { flex-direction: column; } .row .btn { justify-content: center; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="logo">
-      <div class="mark">â–²</div>
+      <div class="mark">▲</div>
       <h1>proximity<span>+</span></h1>
     </div>
     <p class="tag">A minimal music player with automatic lyrics and auto-tagging.</p>
 
     <div class="card">
       <h2>Windows</h2>
-      <p>Windows 10 / 11 (64-bit) â€” installer or portable single-file.</p>
-      <a class="btn" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest" id="dl-win">â†“ Get for Windows</a>
-      <a class="btn ghost" href="https://github.com/nithilan-alt-f4/proximity-/releases" >All releases</a>
+      <p>Windows 10 / 11 (64-bit) — installer or portable single-file, no admin needed.</p>
+      <div class="row">
+        <a class="btn" id="dl-win-setup" href="#" disabled>↓ Installer<span class="size" id="size-win-setup"></span></a>
+        <a class="btn ghost" id="dl-win-portable" href="#" disabled>↓ Portable<span class="size" id="size-win-portable"></span></a>
+      </div>
     </div>
 
     <div class="card">
       <h2>macOS</h2>
-      <p>Intel and Apple Silicon (universal .dmg).</p>
-      <a class="btn" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest">â†“ Get for macOS</a>
+      <p>Pick your Mac type — Apple Silicon (M1/M2/M3/M4) or Intel.</p>
+      <div class="row">
+        <a class="btn" id="dl-mac-arm" href="#" disabled>↓ Apple Silicon<span class="size" id="size-mac-arm"></span></a>
+        <a class="btn ghost" id="dl-mac-intel" href="#" disabled>↓ Intel<span class="size" id="size-mac-intel"></span></a>
+      </div>
     </div>
 
     <p class="foot">
-      No sign-up, no API keys needed â€” everything is baked in.<br />
+      No sign-up, no API keys needed — everything is baked in. Installers are unsigned;
+      Windows may show a blue "Windows protected your PC" screen — click <b>More info → Run anyway</b>,
+      and macOS users: right-click → Open the first time.<br /><br />
       Your music files never leave your machine. Only filenames are sent for AI identification.<br />
-      Source on <a href="https://github.com/nithilan-alt-f4/proximity-">GitHub</a> Â· MIT license
+      Source on <a href="https://github.com/nithilan-alt-f4/proximity-">GitHub</a> · MIT license
     </p>
   </div>
 
   <script>
-    // Deep-link Windows users straight to the .exe asset list
     (function () {
-      var isWin = navigator.userAgent.indexOf("Windows") !== -1;
-      var el = document.getElementById("dl-win");
-      if (isWin && el) el.textContent = "â†“ Get for Windows";
+      var API = "https://api.github.com/repos/nithilan-alt-f4/proximity-/releases/latest";
+      var fmt = function (bytes) {
+        if (!bytes) return "";
+        return Math.round(bytes / 1024 / 1024) + " MB";
+      };
+
+      // Download-on-click handler: navigate to the asset URL. GitHub serves
+      // release assets with Content-Disposition: attachment, so the browser
+      // downloads the file instead of leaving the page.
+      var setHref = function (id, url) {
+        var el = document.getElementById(id);
+        if (el) { el.href = url; el.removeAttribute("disabled"); }
+      };
+
+      fetch(API, { headers: { "Accept": "application/vnd.github+json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (rel) {
+          var find = function (re) {
+            for (var i = 0; i < (rel.assets || []).length; i++) {
+              if (re.test(rel.assets[i].name)) return rel.assets[i];
+            }
+            return null;
+          };
+          var setup = find(/Setup.*\.exe$/i);
+          var portable = find(/^(?!.*Setup).*\.exe$/i);
+          var dmgArm = find(/arm64\.dmg$/i);
+          var dmgIntel = find(/^(?!.*arm64).*\.dmg$/i);
+
+          if (setup) { setHref("dl-win-setup", setup.browser_download_url); document.getElementById("size-win-setup").textContent = fmt(setup.size); }
+          if (portable) { setHref("dl-win-portable", portable.browser_download_url); document.getElementById("size-win-portable").textContent = fmt(portable.size); }
+          if (dmgArm) { setHref("dl-mac-arm", dmgArm.browser_download_url); document.getElementById("size-mac-arm").textContent = fmt(dmgArm.size); }
+          if (dmgIntel) { setHref("dl-mac-intel", dmgIntel.browser_download_url); document.getElementById("size-mac-intel").textContent = fmt(dmgIntel.size); }
+        })
+        .catch(function () {
+          // Fallback: API unreachable (rate limit) — send users to the release page.
+          var all = ["dl-win-setup", "dl-win-portable", "dl-mac-arm", "dl-mac-intel"];
+          for (var i = 0; i < all.length; i++) {
+            var el = document.getElementById(all[i]);
+            if (el) { el.href = "https://github.com/nithilan-alt-f4/proximity-/releases/latest"; el.removeAttribute("disabled"); }
+          }
+        });
     })();
   </script>
 </body>
