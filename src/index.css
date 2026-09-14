@@ -746,6 +746,21 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border: 0; bo
 .drawer-header { display: flex; min-height: 52px; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--ink); }
 .drawer-header h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -.04em; }
 .drawer-body { flex: 1; overflow-y: auto; }
+
+/* Now-playing log (history drawer) rows */
+.hist-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); background: var(--paper); }
+.hist-row:hover { border-color: var(--ink); }
+.hist-cover { width: 40px; height: 40px; flex-shrink: 0; border: 1px solid var(--line); background: var(--paper-2); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.hist-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hist-cover-fallback { color: var(--text-muted); display: flex; }
+.hist-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hist-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 12px; letter-spacing: -.01em; }
+.hist-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
+.hist-when { flex-shrink: 0; color: var(--text-muted); font-size: 8.5px; }
+.hist-play { display: inline-flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--ink); color: var(--ink); background: transparent; cursor: pointer; }
+.hist-play:hover:not(:disabled) { background: var(--red); border-color: var(--red); color: #fff; }
+.hist-play:disabled { opacity: .35; cursor: not-allowed; }
+.hist-empty { display: flex; flex: 1; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-muted); padding: 24px; text-align: center; }
 .translation-bar, .viz-style-bar { display: flex; gap: 0; border: 1px solid var(--line); }
 .translation-btn, .viz-style-btn { flex: 1; padding: 7px 6px; border-right: 1px solid var(--line); color: var(--text-tertiary); font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .08em; text-align: center; }
 .translation-btn:last-child, .viz-style-btn:last-child { border-right: 0; }
@@ -800,6 +815,19 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border: 0; bo
 .fs-layout-btn-active { background: var(--ink); color: var(--paper); }
 .fs-close { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 1px solid var(--ink); color: var(--ink); }
 .fs-close:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+/* Fullscreen idle (no song loaded) — was previously a dead render */
+.fs-shell-idle { align-items: center; }
+.fs-idle { position: relative; z-index: 1; display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px; text-align: center; }
+.fs-idle-disc { position: relative; width: clamp(120px, 24vw, 220px); aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--ink); background: repeating-radial-gradient(circle, var(--grid-rule) 0 1px, transparent 1px 6px); animation: fs-idle-spin 24s linear infinite; }
+.fs-idle-disc-label { position: absolute; inset: 32%; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid var(--red); color: var(--red); font-family: var(--font-display, "Space Grotesk"); font-weight: 800; font-size: clamp(18px, 3vw, 30px); background: var(--paper); animation: fs-idle-spin-rev 24s linear infinite; }
+@keyframes fs-idle-spin { to { transform: rotate(360deg); } }
+@keyframes fs-idle-spin-rev { to { transform: rotate(-360deg); } }
+.fs-idle-title { font-family: var(--font-display, "Space Grotesk"); font-size: clamp(26px, 4vw, 44px); font-weight: 800; letter-spacing: -.02em; margin: 0; text-transform: uppercase; }
+.fs-idle-sub { max-width: 46ch; color: var(--text-tertiary); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em; line-height: 1.8; margin: 0; }
+.fs-idle-btn { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 12px 22px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .12em; cursor: pointer; }
+.fs-idle-btn:hover { background: var(--red); border-color: var(--red); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .fs-idle-disc, .fs-idle-disc-label { animation: none; } }
 .fs-stage { display: grid; flex: 1; min-height: 0; overflow: hidden; align-items: stretch; transition: grid-template-columns 220ms var(--ease-mechanical), grid-template-rows 220ms var(--ease-mechanical); }
 .fs-stage[data-mode="lyrics"], .fs-stage[data-mode="viz"] { grid-template-columns: minmax(0, 1fr) minmax(320px, var(--fs-side, 1.08fr)); }
 .fs-stage[data-mode="centered"] { grid-template-columns: 1fr; justify-items: center; }

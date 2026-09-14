@@ -33,8 +33,24 @@ export interface EqProfile {
   isPreset: boolean;
 }
 
+/**
+ * One row per playback start ("now playing" / scrobble entry).
+ * Stores the full metadata snapshot — title, artist, album, cover — so the
+ * history stays readable even if the song is later deleted from the library.
+ */
+export interface PlayHistoryEntry {
+  id: string; // unique play id
+  songId: string; // library song id (may no longer exist after deletion)
+  title: string;
+  artist: string;
+  album?: string;
+  albumCover?: string;
+  duration: number; // seconds, song length at time of play
+  playedAt: number; // epoch ms when playback started
+}
+
 const DB_NAME = "audiovisual_player_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const DEFAULT_EQ_PRESETS: EqProfile[] = [
   { id: "flat", name: "Flat (Normal)", gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], isPreset: true },
@@ -65,6 +81,12 @@ class AudioDB {
         }
         if (!db.objectStoreNames.contains("eq_profiles")) {
           db.createObjectStore("eq_profiles", { keyPath: "id" });
+        }
+        // v2: play history ("now playing" log)
+        if (!db.objectStoreNames.contains("play_history")) {
+          const history = db.createObjectStore("play_history", { keyPath: "id" });
+          history.createIndex("playedAt", "playedAt"); // chronological queries
+          history.createIndex("songId", "songId");     // per-song play counts
         }
       };
 
@@ -213,6 +235,73 @@ class AudioDB {
 
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  // --- PLAY HISTORY (v2) ---
+  // Append a "now playing" entry. Also keeps the log bounded: after saving,
+  // drop everything but the newest MAX_HISTORY entries.
+  public static readonly MAX_HISTORY = 500;
+
+  public async addPlayHistoryEntry(entry: PlayHistoryEntry): Promise<void> {
+    const db = await this.initDB();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("play_history", "readwrite");
+      const store = transaction.objectStore("play_history");
+      store.put(entry);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    await this.trimPlayHistory();
+  }
+
+  public async getPlayHistory(limit = 100): Promise<PlayHistoryEntry[]> {
+    const db = await this.initDB();
+    const all = await new Promise<PlayHistoryEntry[]>((resolve, reject) => {
+      const transaction = db.transaction("play_history", "readonly");
+      const store = transaction.objectStore("play_history");
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+    // newest first
+    return all.sort((a, b) => b.playedAt - a.playedAt).slice(0, limit);
+  }
+
+  public async clearPlayHistory(): Promise<void> {
+    const db = await this.initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction("play_history", "readwrite");
+      const store = transaction.objectStore("play_history");
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Remove oldest entries beyond MAX_HISTORY
+  private async trimPlayHistory(): Promise<void> {
+    const db = await this.initDB();
+    const all = await new Promise<PlayHistoryEntry[]>((resolve, reject) => {
+      const transaction = db.transaction("play_history", "readonly");
+      const store = transaction.objectStore("play_history");
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+    if (all.length <= AudioDB.MAX_HISTORY) return;
+
+    const oldestFirst = all.sort((a, b) => a.playedAt - b.playedAt);
+    const excess = oldestFirst.slice(0, all.length - AudioDB.MAX_HISTORY);
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("play_history", "readwrite");
+      const store = transaction.objectStore("play_history");
+      for (const e of excess) store.delete(e.id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 }

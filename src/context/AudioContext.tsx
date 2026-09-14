@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import audioDb, { Song, Playlist, EqProfile, DEFAULT_EQ_PRESETS } from "../lib/db";
+import audioDb, { Song, Playlist, EqProfile, PlayHistoryEntry, DEFAULT_EQ_PRESETS } from "../lib/db";
 
 export type PlayerTheme = "default";
 
@@ -22,6 +22,8 @@ interface AudioContextType {
   analyserNode: AnalyserNode | null;
   isFullscreen: boolean;
   setIsFullscreen: (isFullscreen: boolean) => void;
+  playHistory: PlayHistoryEntry[];
+  clearPlayHistory: () => Promise<void>;
   
   loadSongs: () => Promise<void>;
   loadPlaylists: () => Promise<void>;
@@ -74,6 +76,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [queueIndex, setQueueIndex] = useState(-1);
   const [activeEqProfile, setActiveEqProfile] = useState<EqProfile>(DEFAULT_EQ_PRESETS[0]);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
+  const [playHistory, setPlayHistory] = useState<PlayHistoryEntry[]>([]);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -86,6 +89,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const currentSongIdRef = useRef<string | null>(null);
   // Holds the pre-shuffle queue order so shuffle can be toggled back off cleanly
   const preShuffleQueueRef = useRef<Song[] | null>(null);
+  // Timestamp of when the CURRENT play event started (set by playSong). Used as
+  // part of the play-history log key so restarting the same song logs again.
+  const playStartStampRef = useRef<number | null>(null);
   // Always points at the latest handleSongEnded closure. The "ended" listener below is
   // registered once (in the mount-only effect) so without this ref it would keep calling
   // a stale version of handleSongEnded that closes over the very first render's empty
@@ -167,7 +173,40 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentSong]);
 
-  // Handle Play/Pause changes
+  // ── Now-playing log ──────────────────────────────────────────────────────
+  // Persist every playback start (song + album cover + artist + album) to the
+  // play_history store. Each distinct play event logs exactly one row:
+  //  - a new song starting          → log
+  //  - the same song re-selected    → log (guard key changes via playKeyRef)
+  //  - effect re-runs, same playing → no double-log
+  const lastLoggedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentSong) {
+      lastLoggedKeyRef.current = null;
+      return;
+    }
+    if (!isPlaying) return;
+    // Key includes a timestamp set when playback of this song BEGAN. playSong
+    // stamps it, so a manual restart of the same song gets a fresh key.
+    const playKey = `${currentSong.id}@${playStartStampRef.current ?? 0}`;
+    if (lastLoggedKeyRef.current === playKey) return;
+    lastLoggedKeyRef.current = playKey;
+
+    const entry: PlayHistoryEntry = {
+      id: "ph_" + Math.random().toString(36).slice(2, 11),
+      songId: currentSong.id,
+      title: currentSong.title,
+      artist: currentSong.artist,
+      album: currentSong.album,
+      albumCover: currentSong.albumCover,
+      duration: currentSong.duration,
+      playedAt: Date.now(),
+    };
+
+    audioDb.addPlayHistoryEntry(entry)
+      .then(() => loadPlayHistory())
+      .catch((err) => console.warn("Failed to log play to history:", err));
+  }, [currentSong?.id, isPlaying, playStartStampRef.current]);
   useEffect(() => {
     if (!audioRef.current || !currentSong) return;
 
@@ -271,7 +310,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Load functions
   const loadAllData = async () => {
-    await Promise.all([loadSongs(), loadPlaylists(), loadEqProfiles()]);
+    await Promise.all([loadSongs(), loadPlaylists(), loadEqProfiles(), loadPlayHistory()]);
+  };
+
+  const loadPlayHistory = async () => {
+    try {
+      const history = await audioDb.getPlayHistory(100);
+      setPlayHistory(history);
+    } catch (err) {
+      console.warn("Failed to load play history:", err);
+    }
   };
 
   const loadSongs = async () => {
@@ -430,6 +478,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     
     setCurrentSong(song);
+    playStartStampRef.current = Date.now();
     setIsPlaying(true);
   };
 
@@ -804,6 +853,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     playAfterOffsetRef.current = 0;
   }, [currentSong?.id]);
 
+  // Clear the "now playing" log
+  const clearPlayHistory = async () => {
+    await audioDb.clearPlayHistory();
+    setPlayHistory([]);
+  };
+
   return (
     <AudioContext.Provider
       value={{
@@ -825,6 +880,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         analyserNode,
         isFullscreen,
         setIsFullscreen,
+        playHistory,
+        clearPlayHistory,
         
         loadSongs,
         loadPlaylists,

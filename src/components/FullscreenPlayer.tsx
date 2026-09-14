@@ -187,7 +187,53 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose, isD
     window.addEventListener("mouseup", onUp);
   }, [sideW]);
 
-  if (!currentSong) return null;
+  // Empty-archive state: fullscreen used to render NOTHING when no song was
+  // loaded (early `return null`), which made the FULLSCREEN button feel dead.
+  // Now we show a proper idle stage instead.
+  if (!currentSong) {
+    return (
+      <div className="fs-shell fs-shell-idle">
+        <div className="fs-bg-drift" />
+        <div className="fs-topbar" ref={topbarRef}>
+          <div className="fs-brand">
+            <span className="brand-mark" aria-hidden="true">P+</span>
+            <span className="micro-label">PROXIMITY+</span>
+          </div>
+          <div className="fs-topbar-right">
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                className="fs-close"
+                style={{ marginRight: 6 }}
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {isDark ? <Sun size={15} /> : <Moon size={15} />}
+              </button>
+            )}
+            <button onClick={onClose} className="fs-close" aria-label="Close fullscreen">
+              <ArrowDown size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="fs-idle">
+          <div className="fs-idle-disc" aria-hidden="true">
+            <span className="fs-idle-disc-grooves" />
+            <span className="fs-idle-disc-label">P+</span>
+          </div>
+          <h1 className="fs-idle-title">ARCHIVE EMPTY</h1>
+          <p className="fs-idle-sub">
+            {songs.length === 0
+              ? "NO CUTS LOADED — CLOSE FULLSCREEN AND ADD MUSIC TO THE ARCHIVE."
+              : "PICK A CUT FROM THE ARCHIVE TO START PLAYBACK."}
+          </p>
+          <button className="fs-idle-btn" onClick={onClose}>
+            <ArrowDown size={14} /> BACK TO LIBRARY
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const turntableEl = (
     <div className="fs-turntable">

@@ -1,9 +1,9 @@
-{
+﻿{
   "name": "proximity-plus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
-  "description": "A minimal music player with automatic lyrics and auto-tagging — Proximity+",
+  "description": "A minimal music player with automatic lyrics and auto-tagging â€” Proximity+",
   "author": "Nithilan",
   "main": "main.cjs",
   "scripts": {

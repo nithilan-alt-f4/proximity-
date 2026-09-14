@@ -7,12 +7,13 @@ import { Visualizer } from "./components/Visualizer";
 import { MusicPlayer } from "./components/MusicPlayer";
 import { FullscreenPlayer } from "./components/FullscreenPlayer";
 import { QueueManager } from "./components/QueueManager";
-import { Plus, X, Pause as PauseIcon, Maximize2, Trash2, Play, Pencil, Check, Music, Sun, Moon } from "lucide-react";
+import { HistoryDrawer } from "./components/HistoryDrawer";
+import { Plus, X, Pause as PauseIcon, Maximize2, Trash2, Play, Pencil, Check, Music, Sun, Moon, History as HistoryIcon } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useTheme } from "./hooks/useTheme";
 import type { Song, Playlist } from "./lib/db";
 
-type Drawer = "queue" | "lyrics" | "eq" | "viz" | null;
+type Drawer = "queue" | "lyrics" | "eq" | "viz" | "history" | null;
 
 /* Resolve a playlist's ordered songs */
 const playlistSongs = (pl: Playlist | null | undefined, songs: Song[], allSongsFallback = false): Song[] => {
@@ -53,6 +54,7 @@ function Dashboard() {
             <button className="lib-action" onClick={() => toggleDrawer("lyrics")}><LyricIcon />LYRICS</button>
             <button className="lib-action" onClick={() => toggleDrawer("viz")}><VizIcon />VIZ</button>
             <button className="lib-action" onClick={() => toggleDrawer("queue")}><QueueIcon />QUEUE</button>
+            <button className="lib-action" onClick={() => toggleDrawer("history")}><HistoryIcon size={13} />HISTORY</button>
             <button
               className="lib-action"
               onClick={toggleTheme}
@@ -96,6 +98,7 @@ function Dashboard() {
           {drawer === "lyrics" && <LyricsViewer onClose={closeDrawer} />}
           {drawer === "eq" && <Equalizer onClose={closeDrawer} />}
           {drawer === "viz" && <VisualizerDrawer onClose={closeDrawer} />}
+          {drawer === "history" && <HistoryDrawer onClose={closeDrawer} />}
         </AnimatePresence>
 
         {/* Fullscreen Player */}

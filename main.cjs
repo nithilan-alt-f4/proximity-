@@ -13,11 +13,34 @@ const net = require("net");
 const SERVER_BUNDLE = path.join(__dirname, "dist", "server.cjs");
 
 // ---------------------------------------------------------------------------
-// Free-port helper: let the OS assign an ephemeral port so we never collide
-// with whatever else the user has running.
+// Port strategy: IndexedDB is partitioned per origin, and the origin includes
+// the port. If every launch picked a fresh ephemeral port, the app would see a
+// brand-new empty database each time (playlists/songs "vanishing" on restart).
+// So we ALWAYS serve on the same fixed loopback port so the storage origin is
+// stable across sessions. If that port is somehow taken (rare), we retry a
+// small set of fixed alternates before giving up — still deterministic per
+// machine, and in normal use it is always the same one.
 // ---------------------------------------------------------------------------
-function findFreePort() {
-  return new Promise((resolve, reject) => {
+const FIXED_PORTS = [37419, 37420, 37421, 37422];
+
+function checkPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once("error", () => resolve(false));
+    srv.once("listening", () => srv.close(() => resolve(true)));
+    srv.listen(port, "127.0.0.1");
+  });
+}
+
+async function findFreePort() {
+  for (const port of FIXED_PORTS) {
+    if (await checkPortFree(port)) return port;
+  }
+  // Absolute fallback (should never happen): OS-assigned. Storage will still be
+  // consistent within this run; next launch normally lands on a FIXED_PORT
+  // again. Log loudly so we know why data might look stale.
+  console.warn("[electron] All fixed ports busy — falling back to ephemeral port. IndexedDB data may appear missing this session.");
+  return await new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.listen(0, "127.0.0.1", () => {
       const port = srv.address().port;
