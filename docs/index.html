@@ -691,8 +691,8 @@
               Windows may flag the unsigned build: <b>More info → Run anyway</b>.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
-              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
+              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1" download>↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
+              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1" download>↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">NO ADMIN REQUIRED · PORTABLE = SINGLE FILE</span>
@@ -715,8 +715,8 @@
               Unsigned build — right-click the app and <b>Open</b> the first launch.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
-              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
+              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1" download>↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
+              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases" aria-disabled="true" tabindex="-1" download>↓ INTEL<span class="size" id="size-mac-intel"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">M1 / M2 / M3 / M4 · OR LEGACY INTEL</span>
@@ -741,7 +741,16 @@
       "use strict";
 
       var API = "https://api.github.com/repos/nithilan-alt-f4/proximity-/releases/latest";
-      var FALLBACK = "https://github.com/nithilan-alt-f4/proximity-/releases/latest";
+      var FALLBACKS = {
+        "dl-win-setup":
+          "https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.Setup.1.0.1.exe",
+        "dl-win-portable":
+          "https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.1.0.1.exe",
+        "dl-mac-arm":
+          "https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1-arm64.dmg",
+        "dl-mac-intel":
+          "https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1.dmg"
+      };
       var reduceMotion = window.matchMedia
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -814,14 +823,15 @@
           }
         })
         .catch(function () {
-          // API unreachable or rate-limited — fall back to the release page.
-          var all = ["dl-win-setup", "dl-win-portable", "dl-mac-arm", "dl-mac-intel"];
-          for (var i = 0; i < all.length; i++) {
-            var el = document.getElementById(all[i]);
-            if (el) { el.href = FALLBACK; el.removeAttribute("aria-disabled"); el.setAttribute("tabindex", "0"); }
-          }
+          // API unavailable or rate-limited:
+          // use direct binary downloads instead of the Releases HTML page.
+          Object.keys(FALLBACKS).forEach(function (id) {
+            setHref(id, FALLBACKS[id]);
+          });
           var vr = document.getElementById("ver-readout");
-          if (vr) vr.textContent = "GITHUB";
+          if (vr) vr.textContent = "DIRECT";
+          var hn = document.getElementById("hero-numeral");
+          if (hn) hn.textContent = "1.0.2";
         });
 
       /* ---- 3D rigs ------------------------------------------------- */
