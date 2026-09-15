@@ -12,462 +12,158 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
-    /*
-      PROXIMITY+ / REDLINE CONTROL ROOM — acquisition panel
-      Same system as the app: Space Grotesk display, IBM Plex Mono telemetry,
-      paper chassis, ink hairlines, pure signal red. No rounded UI. No ambient
-      glow. Depth comes from hard offset plates and true 3D perspective rigs.
-    */
     :root {
       --paper: #f5f5f5;
-      --paper-2: #e9e9e9;
-      --paper-3: #d8d8d8;
       --ink: #000;
-      --line: #000;
-      --graphite: #303030;
       --red: #ff0000;
       --red-dark: #b80000;
+      --line: #000;
       --text-secondary: #666;
-      --text-tertiary: #555;
-      --text-muted: #777;
-      --ease-mechanical: cubic-bezier(.23, 1, .32, 1);
     }
-
     *, *::before, *::after { box-sizing: border-box; }
-    html, body { min-width: 320px; min-height: 100%; }
     html { background: var(--paper); }
     body {
       margin: 0;
       background: var(--paper);
       color: var(--ink);
       font-family: "Space Grotesk", Arial, sans-serif;
-      font-synthesis: none;
-      text-rendering: optimizeLegibility;
       -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
     }
     a { color: inherit; }
     ::selection { background: var(--red); color: #fff; }
     :focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
 
-    /* ---------------------------------------------------------------
-       Blueprint substrate: fine grid + plaid rules, corner crosshairs
-    ---------------------------------------------------------------- */
-    .substrate {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background:
-        linear-gradient(rgba(0,0,0,.045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,0,0,.045) 1px, transparent 1px),
-        linear-gradient(rgba(0,0,0,.028) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,0,0,.028) 1px, transparent 1px),
-        var(--paper);
-      background-size:
-        96px 96px,
-        96px 96px,
-        24px 24px,
-        24px 24px,
-        auto;
-    }
-    .substrate::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, rgba(245,245,245,0) 60%, rgba(245,245,245,.9) 100%);
-    }
-    /* Registration crosshairs — print-shop corner marks */
-    .regmark {
-      position: fixed;
-      z-index: 60;
-      width: 21px;
-      height: 21px;
-      pointer-events: none;
-    }
-    .regmark::before, .regmark::after {
-      content: "";
-      position: absolute;
-      background: var(--ink);
-    }
-    .regmark::before { left: 50%; top: 0; width: 1px; height: 100%; }
-    .regmark::after { top: 50%; left: 0; height: 1px; width: 100%; }
-    .regmark::before, .regmark::after { opacity: .55; }
-    .reg-tl { top: 10px; left: 10px; }
-    .reg-tr { top: 10px; right: 10px; }
-    .reg-bl { bottom: 10px; left: 10px; }
-    .reg-br { bottom: 10px; right: 10px; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
 
-    /* ---------------------------------------------------------------
-       Type utilities (app parity)
-    ---------------------------------------------------------------- */
-    .micro-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--text-tertiary);
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: .11em;
-      line-height: 1.2;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-    .red { color: var(--red); }
-    .status-dot {
-      display: inline-block;
-      width: 6px; height: 6px;
-      background: var(--red);
-      animation: pulse 1.4s steps(2, jump-none) infinite;
-    }
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: .25; } 100% { opacity: 1; } }
-
-    /* ---------------------------------------------------------------
-       Topbar: registration rail
-    ---------------------------------------------------------------- */
-    .topbar {
-      position: relative;
-      z-index: 40;
+    /* --- Header --- */
+    header {
       display: flex;
-      min-height: 58px;
       align-items: center;
+      justify-content: space-between;
+      padding: 20px 0;
       border-bottom: 1px solid var(--line);
-      background: var(--paper);
     }
-    .brand-lockup { display: flex; flex-shrink: 0; align-items: center; gap: 12px; padding: 0 20px; }
-    .brand-name { font-size: 14px; font-weight: 800; letter-spacing: -.055em; line-height: 1; }
-    .brand-lockup .micro-label { margin-top: 4px; color: var(--text-muted); font-size: 8px; }
-    .brand-mark {
-      position: relative;
-      display: grid;
-      width: 29px; height: 29px;
-      place-items: center;
-      overflow: hidden;
-      border: 1px solid var(--ink);
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .mark {
+      width: 32px; height: 32px;
       background: var(--ink);
       color: var(--paper);
+      display: grid; place-items: center;
       font-family: "IBM Plex Mono", monospace;
-      font-size: 9px;
-      font-weight: 700;
+      font-size: 11px; font-weight: 700;
     }
-    .brand-mark::before, .brand-mark::after {
-      content: "";
-      position: absolute;
-      background: var(--red);
-    }
-    .brand-mark::before { width: 4px; height: 35px; transform: rotate(41deg); }
-    .brand-mark::after { width: 18px; height: 2px; transform: rotate(-41deg); }
-    .topbar-rail {
-      display: flex;
-      flex: 1;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0;
-      min-width: 0;
-    }
-    .topbar-readout {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      height: 100%;
-      padding: 8px 20px;
-      border-left: 1px solid var(--line);
-    }
-    .topbar-readout .micro-label { color: var(--text-tertiary); }
-
-    /* ---------------------------------------------------------------
-       Telemetry ticker
-    ---------------------------------------------------------------- */
-    .ticker {
-      position: relative;
-      z-index: 30;
-      display: flex;
-      overflow: hidden;
-      border-bottom: 1px solid var(--line);
-      background: var(--ink);
-      color: var(--paper);
-    }
-    .ticker-track {
-      display: flex;
-      flex-shrink: 0;
-      width: max-content;
-      animation: ticker 28s linear infinite;
-    }
-    .ticker-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 7px 22px 7px 0;
+    .brand-name { font-size: 16px; font-weight: 700; letter-spacing: -.04em; }
+    .tag {
       font-family: "IBM Plex Mono", monospace;
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: .14em;
+      font-size: 11px; font-weight: 500;
+      letter-spacing: .1em;
       text-transform: uppercase;
-      white-space: nowrap;
+      color: var(--red);
     }
-    .ticker-item::before {
-      content: "";
-      width: 5px; height: 5px;
-      margin-left: 22px;
-      background: var(--red);
-    }
-    @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
-    /* ---------------------------------------------------------------
-       Stage / hero
-    ---------------------------------------------------------------- */
-    .stage {
-      position: relative;
-      z-index: 1;
-      max-width: 1240px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-    .hero {
-      position: relative;
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
-      gap: 0;
-      min-height: 420px;
-      border-bottom: 1px solid var(--line);
-      perspective: 1400px;
-      /* clip the oversized version numeral + tilted plates */
-      overflow: hidden;
-      clip-path: inset(0 0 0 0);
-    }
-    .hero-copy {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 56px 40px 56px 0;
-    }
-    .hero-kicker {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 26px;
-    }
-    .hero-kicker .rule { width: 44px; height: 1px; background: var(--ink); }
-    .hero-title {
+    /* --- Hero --- */
+    .hero { padding: 64px 0 48px; }
+    h1 {
       margin: 0;
-      font-size: clamp(44px, 7vw, 84px);
+      font-size: clamp(36px, 6vw, 64px);
       font-weight: 700;
       letter-spacing: -.04em;
-      line-height: .94;
+      line-height: .95;
       text-transform: uppercase;
     }
-    .hero-title .red { letter-spacing: -.04em; }
-    .hero-sub {
-      max-width: 52ch;
-      margin: 26px 0 0;
+    h1 .red { color: var(--red); }
+    .sub {
+      margin: 24px 0 0;
       color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.65;
+      font-size: 16px;
+      line-height: 1.7;
+      max-width: 54ch;
     }
-    .hero-sub b { color: var(--ink); font-weight: 600; }
-    .hero-meta {
+    .sub b { color: var(--ink); font-weight: 600; }
+    .meta {
       display: flex;
       flex-wrap: wrap;
-      gap: 0 28px;
-      margin-top: 34px;
-      padding-top: 18px;
+      gap: 8px 24px;
+      margin-top: 32px;
+      padding-top: 16px;
       border-top: 1px solid var(--line);
     }
-    .hero-meta .micro-label { color: var(--ink); }
-    .hero-meta .micro-label span { color: var(--text-tertiary); }
+    .meta span {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px; font-weight: 500;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+    .meta b { color: var(--ink); }
 
-    /* Right bay: 3D plate rig with the signal triangle */
-    .hero-rig {
-      position: relative;
+    /* --- Divider --- */
+    .divider {
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .divider .label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px; font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .divider .right { color: var(--red); }
+
+    /* --- Download grid --- */
+    .grid {
       display: grid;
-      place-items: center;
-      border-left: 1px solid var(--line);
-      background:
-        linear-gradient(rgba(0,0,0,.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,0,0,.07) 1px, transparent 1px),
-        var(--paper-2);
-      background-size: 48px 48px;
-      overflow: hidden;
-      transform-style: preserve-3d;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      padding: 32px 0 80px;
     }
-    /* print-head sweep */
-    .hero-rig::before {
-      content: "";
-      position: absolute;
-      top: 0; bottom: 0;
-      width: 1px;
-      background: var(--red);
-      opacity: .5;
-      animation: sweep 5.2s var(--ease-mechanical) infinite;
-    }
-    @keyframes sweep {
-      0% { left: -1%; opacity: 0; }
-      8% { opacity: .5; }
-      92% { opacity: .5; }
-      100% { left: 101%; opacity: 0; }
-    }
-    .rig-stack {
-      position: relative;
-      transform-style: preserve-3d;
-      transform: rotateX(14deg) rotateY(-16deg) rotateZ(2deg);
-      transition: transform .9s var(--ease-mechanical);
-      will-change: transform;
-    }
-    /* While the pointer is being tracked, per-frame transforms must be instant. */
-    .tilting { transition: none !important; }
-    .plate {
-      position: absolute;
-      inset: 0;
+    .card {
       border: 1px solid var(--ink);
       background: var(--paper);
-      box-shadow: 14px 14px 0 rgba(0,0,0,.22);
     }
-    .plate.p2 { transform: translateZ(-34px) translate(20px, 20px); background: var(--paper-3); }
-    .plate.p1 { transform: translateZ(-17px) translate(10px, 10px); background: var(--paper-2); }
-    .plate.p0 { position: relative; transform: translateZ(0); }
-    .rig-frame {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      width: min(300px, 58vw);
-      aspect-ratio: 300 / 300;
-      place-items: center;
-      border: 1px solid var(--ink);
-      background: var(--ink);
-      padding: 26px;
-      box-shadow: 18px 18px 0 var(--red);
-    }
-    .tri-stack { position: relative; width: 130px; height: 150px; transform-style: preserve-3d; }
-    .tri {
-      position: absolute;
-      inset: 0;
-      background: var(--paper);
-      clip-path: polygon(0 0, 100% 50%, 0 100%);
-    }
-    .tri.t2 { transform: translateZ(10px) translate(14px, 10px); background: var(--paper-3); opacity: .85; }
-    .tri.t1 { transform: translateZ(22px) translate(7px, 5px); background: var(--red); }
-    .tri.t0 { transform: translateZ(34px); background: var(--red); }
-    .rig-tag {
-      position: absolute;
-      bottom: 14px;
-      left: 14px;
-      color: var(--paper);
-    }
-    .rig-tag .micro-label { color: #a8a8a8; }
-    .rig-serial {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      color: var(--paper);
-    }
-
-    /* Oversized clipped numeral — version stamp bleeding off stage */
-    .hero-numeral {
-      position: absolute;
-      right: -10px;
-      bottom: -34px;
-      z-index: 0;
-      font-size: clamp(120px, 18vw, 230px);
-      font-weight: 700;
-      letter-spacing: -.06em;
-      line-height: 1;
-      color: transparent;
-      -webkit-text-stroke: 1.5px var(--ink);
-      opacity: .16;
-      pointer-events: none;
-      user-select: none;
-    }
-
-    /* ---------------------------------------------------------------
-       Downloads
-    ---------------------------------------------------------------- */
-    .downloads { padding: 0 0 90px; }
-    .panel-kicker {
+    .card-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 39px;
-      padding: 0 4px;
-      margin: 40px 0 26px;
-      border-bottom: 1px solid var(--line);
-    }
-    .panel-kicker .micro-label { color: var(--ink); }
-    .panel-kicker-right { color: var(--red) !important; }
-
-    .dl-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 28px;
-      perspective: 1200px;
-    }
-    .dl-card {
-      position: relative;
-      display: flex;
-      min-width: 0;
-      flex-direction: column;
-      border: 1px solid var(--ink);
-      background: var(--paper);
-      box-shadow: 10px 10px 0 var(--ink);
-      transform-style: preserve-3d;
-      transition: transform .55s var(--ease-mechanical), box-shadow .55s var(--ease-mechanical);
-      will-change: transform;
-    }
-    .dl-card:hover { box-shadow: 14px 14px 0 var(--ink); }
-    .dl-card-plate {
-      position: absolute;
-      inset: 0;
-      border: 1px solid var(--ink);
-      background: var(--paper-3);
-      transform: translateZ(-26px) translate(14px, 14px);
-      box-shadow: 10px 10px 0 rgba(0,0,0,.14);
-    }
-    .dl-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--line);
+      padding: 14px 20px;
       background: var(--ink);
       color: var(--paper);
-      transform: translateZ(14px);
-      min-width: 0;
+      border-bottom: 1px solid var(--line);
     }
-    .dl-head .micro-label { white-space: normal; }
-    .dl-head .os {
+    .card-head h2 {
       margin: 0;
-      font-size: 19px;
+      font-size: 18px;
       font-weight: 800;
       letter-spacing: -.03em;
       text-transform: uppercase;
     }
-    .dl-head .micro-label { color: #a8a8a8; }
-    .dl-body {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 22px;
-      padding: 22px 20px 20px;
-      transform: translateZ(26px);
-      transform-style: preserve-3d;
+    .card-head .chip {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 10px; font-weight: 500;
+      letter-spacing: .1em;
+      color: #999;
     }
-    .dl-note {
-      margin: 0;
+    .card-body { padding: 20px; }
+    .card-body p {
+      margin: 0 0 20px;
       color: var(--text-secondary);
-      font-size: 13px;
-      line-height: 1.6;
+      font-size: 14px;
+      line-height: 1.65;
     }
-    .dl-actions { display: flex; flex-wrap: wrap; gap: 14px; }
+    .card-body p b { color: var(--ink); }
+
+    .actions { display: flex; gap: 12px; }
+
+    /* --- Buttons --- */
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 12px 20px;
+      padding: 12px 22px;
       border: 1px solid var(--ink);
       background: var(--ink);
       color: var(--paper);
@@ -478,17 +174,16 @@
       text-decoration: none;
       text-transform: uppercase;
       box-shadow: 5px 5px 0 var(--red);
-      transform: translateZ(0);
-      transition: transform .18s var(--ease-mechanical), box-shadow .18s var(--ease-mechanical), background .18s var(--ease-mechanical), color .18s var(--ease-mechanical);
+      transition: all .15s ease;
     }
     .btn:hover {
       background: var(--red);
       color: #fff;
-      transform: translate(-2px, -2px) translateZ(0);
+      transform: translate(-2px, -2px);
       box-shadow: 7px 7px 0 var(--ink);
     }
     .btn:active {
-      transform: translate(4px, 4px) translateZ(0);
+      transform: translate(4px, 4px);
       box-shadow: 1px 1px 0 var(--ink);
     }
     .btn.ghost {
@@ -501,383 +196,184 @@
       color: var(--red-dark);
       box-shadow: 7px 7px 0 var(--red);
     }
-    .btn .size {
+    .size {
       font-family: "IBM Plex Mono", monospace;
-      font-size: 9px;
-      font-weight: 500;
-      letter-spacing: .08em;
-      opacity: .72;
+      font-size: 10px;
+      opacity: .7;
     }
-    .dl-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: auto;
-      padding-top: 16px;
-      border-top: 1px solid var(--line);
-      transform: translateZ(10px);
-    }
-    .dl-foot .micro-label { white-space: normal; }
-    /* barcode strip */
-    .barcode {
-      display: inline-flex;
-      align-items: flex-end;
-      gap: 2px;
-      height: 22px;
-    }
-    .barcode i {
-      display: block;
-      width: 2px;
-      height: 100%;
-      background: var(--ink);
-    }
-    .barcode i:nth-child(2n) { width: 1px; height: 82%; }
-    .barcode i:nth-child(3n) { width: 3px; height: 100%; }
-    .barcode i:nth-child(5n) { height: 64%; }
 
-    /* ---------------------------------------------------------------
-       Footer
-    ---------------------------------------------------------------- */
-    .foot {
-      position: relative;
-      z-index: 1;
+    .card-foot {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .card-foot span {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    /* --- Footer --- */
+    footer {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px 28px;
-      padding: 18px 24px;
+      gap: 12px 24px;
+      padding: 18px 0;
       border-top: 1px solid var(--line);
-      background: var(--paper);
     }
-    .foot a { color: var(--red-dark); text-decoration: none; border-bottom: 1px solid var(--red-dark); }
-    .foot a:hover { background: var(--red); color: #fff; border-bottom-color: var(--red); }
-    .foot .micro-label { white-space: normal; }
+    footer span {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+    footer a {
+      color: var(--red-dark);
+      text-decoration: none;
+      border-bottom: 1px solid var(--red-dark);
+    }
+    footer a:hover { background: var(--red); color: #fff; border-color: var(--red); }
 
-    /* ---------------------------------------------------------------
-       Responsive
-    ---------------------------------------------------------------- */
-    @media (max-width: 920px) {
-      .hero { grid-template-columns: 1fr; }
-      .hero-copy { padding: 44px 0 40px; }
-      .hero-rig { border-left: 0; border-top: 1px solid var(--line); min-height: 340px; }
-      .hero-numeral { right: 0; bottom: -18px; }
-      .dl-grid { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 560px) {
-      .topbar-rail .topbar-readout:last-child { display: none; }
-      .dl-actions .btn { flex: 1 1 100%; justify-content: center; }
-      .regmark { display: none; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .ticker-track { animation: none; }
-      .hero-rig::before { animation: none; opacity: 0; }
-      .status-dot { animation: none; }
-      .dl-card, .rig-stack, .btn { transition: none; }
+    /* --- Responsive --- */
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: 1fr; }
+      .actions { flex-direction: column; }
+      .btn { justify-content: center; }
     }
   </style>
 </head>
 <body>
-  <div class="substrate" aria-hidden="true"></div>
-  <div class="regmark reg-tl" aria-hidden="true"></div>
-  <div class="regmark reg-tr" aria-hidden="true"></div>
-  <div class="regmark reg-bl" aria-hidden="true"></div>
-  <div class="regmark reg-br" aria-hidden="true"></div>
-
-  <header class="topbar">
-    <div class="brand-lockup">
-      <div class="brand-mark">P+</div>
-      <div>
-        <div class="brand-name">PROXIMITY+</div>
-        <div class="micro-label">SIGNAL // MUSIC CONTROL ROOM</div>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="mark">P+</div>
+        <span class="brand-name">PROXIMITY+</span>
       </div>
-    </div>
-    <div class="topbar-rail">
-      <div class="topbar-readout">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span class="micro-label" id="clock">--:--:--</span>
-      </div>
-      <div class="topbar-readout">
-        <span class="micro-label">REL <span class="red" id="ver-readout">ACQUIRING…</span></span>
-      </div>
-    </div>
-  </header>
+      <span class="tag" id="ver">v1.0.2</span>
+    </header>
 
-  <div class="ticker" aria-hidden="true">
-    <div class="ticker-track" id="ticker-track">
-      <span class="ticker-item">AUTO-TAGGING ONLINE</span>
-      <span class="ticker-item">SYNCED LYRICS // LRCLIB</span>
-      <span class="ticker-item">NO SIGN-UP</span>
-      <span class="ticker-item">NO API KEYS REQUIRED</span>
-      <span class="ticker-item">FILES NEVER LEAVE YOUR MACHINE</span>
-      <span class="ticker-item">WINDOWS 10 / 11 · X64</span>
-      <span class="ticker-item">MACOS · APPLE SILICON + INTEL</span>
-      <span class="ticker-item">GROQ KEY-POOL EMBEDDED</span>
-      <span class="ticker-item">MIT LICENSE</span>
-      <span class="ticker-item">SIGNAL RED 255.0.0</span>
-      <span class="ticker-item">AUTO-TAGGING ONLINE</span>
-      <span class="ticker-item">SYNCED LYRICS // LRCLIB</span>
-      <span class="ticker-item">NO SIGN-UP</span>
-      <span class="ticker-item">NO API KEYS REQUIRED</span>
-      <span class="ticker-item">FILES NEVER LEAVE YOUR MACHINE</span>
-      <span class="ticker-item">WINDOWS 10 / 11 · X64</span>
-      <span class="ticker-item">MACOS · APPLE SILICON + INTEL</span>
-      <span class="ticker-item">GROQ KEY-POOL EMBEDDED</span>
-      <span class="ticker-item">MIT LICENSE</span>
-      <span class="ticker-item">SIGNAL RED 255.0.0</span>
-    </div>
-  </div>
-
-  <main class="stage">
     <section class="hero">
-      <div class="hero-copy">
-        <div class="hero-kicker">
-          <span class="rule" aria-hidden="true"></span>
-          <span class="micro-label">01 / ACQUISITION BAY</span>
-        </div>
-        <h1 class="hero-title">DROP THE<br />MESS.<br /><span class="red">GET THE</span><br />MUSIC.</h1>
-        <p class="hero-sub">
-          <b>proximity+</b> is a minimal local music player that listens to your cluttered
-          filenames and hands back clean tags — title, artist, album, cover art — with
-          karaoke-synced lyrics, all automatic. Install, point it at a folder, press play.
-        </p>
-        <div class="hero-meta">
-          <span class="micro-label"><span>ENGINE&nbsp;·&nbsp;</span>GROQ × LLAMA-3.1</span>
-          <span class="micro-label"><span>LYRICS&nbsp;·&nbsp;</span>LRCLIB SYNCED</span>
-          <span class="micro-label"><span>SHELL&nbsp;·&nbsp;</span>ELECTRON</span>
-          <span class="micro-label"><span>TELEMETRY&nbsp;·&nbsp;</span>LOCAL ONLY</span>
-        </div>
-      </div>
-      <div class="hero-rig" id="hero-rig">
-        <div class="rig-stack" id="rig-stack">
-          <div class="plate p2" aria-hidden="true"></div>
-          <div class="plate p1" aria-hidden="true"></div>
-          <div class="rig-frame">
-            <div class="tri-stack" aria-hidden="true">
-              <div class="tri t2"></div>
-              <div class="tri t1"></div>
-              <div class="tri t0"></div>
-            </div>
-            <span class="micro-label rig-tag">SIGNAL&nbsp;/&nbsp;RUN</span>
-            <span class="micro-label rig-serial" id="rig-serial">SN&nbsp;—</span>
-          </div>
-        </div>
-      </div>
-      <div class="hero-numeral" id="hero-numeral" aria-hidden="true">1.0</div>
-    </section>
-
-    <section class="downloads">
-      <div class="panel-kicker">
-        <span class="micro-label">02 / ACQUIRE BINARY</span>
-        <span class="micro-label panel-kicker-right">DIRECT DOWNLOAD — NO REDIRECTS</span>
-      </div>
-
-      <div class="dl-grid">
-        <article class="dl-card" id="card-win">
-          <div class="dl-card-plate" aria-hidden="true"></div>
-          <div class="dl-head">
-            <h2 class="os">WINDOWS</h2>
-            <span class="micro-label">WIN 10 / 11 · 64-BIT</span>
-          </div>
-          <div class="dl-body">
-            <p class="dl-note">
-              Classic setup wizard — pick your install location, desktop shortcut included.
-              Windows may flag the unsigned build: <b>More info → Run anyway</b>.
-            </p>
-            <div class="dl-actions">
-              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.Setup.1.0.1.exe">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
-              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.1.0.1.exe">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
-            </div>
-            <div class="dl-foot">
-              <span class="micro-label">NO ADMIN REQUIRED · PORTABLE = SINGLE FILE</span>
-              <span class="barcode" aria-hidden="true">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-              </span>
-            </div>
-          </div>
-        </article>
-
-        <article class="dl-card" id="card-mac">
-          <div class="dl-card-plate" aria-hidden="true"></div>
-          <div class="dl-head">
-            <h2 class="os">MACOS</h2>
-            <span class="micro-label">DMG · TWO CHIPS</span>
-          </div>
-          <div class="dl-body">
-            <p class="dl-note">
-              Match your chip: Apple Silicon for M-series Macs, Intel for everything older.
-              Unsigned build — right-click the app and <b>Open</b> the first launch.
-            </p>
-            <div class="dl-actions">
-              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1-arm64.dmg">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
-              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1.dmg">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
-            </div>
-            <div class="dl-foot">
-              <span class="micro-label">M1 / M2 / M3 / M4 · OR LEGACY INTEL</span>
-              <span class="barcode" aria-hidden="true">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-              </span>
-            </div>
-          </div>
-        </article>
+      <h1>DROP THE<br>MESS.<br><span class="red">GET THE</span><br>MUSIC.</h1>
+      <p class="sub">
+        <b>proximity+</b> is a minimal local music player that listens to your cluttered
+        filenames and hands back clean tags — title, artist, album, cover art — with
+        karaoke-synced lyrics, all automatic. Install, point it at a folder, press play.
+      </p>
+      <div class="meta">
+        <span><b>ENGINE</b> · GROQ × LLAMA-3.1</span>
+        <span><b>LYRICS</b> · LRCLIB SYNCED</span>
+        <span><b>SHELL</b> · ELECTRON</span>
+        <span><b>TELEMETRY</b> · LOCAL ONLY</span>
       </div>
     </section>
-  </main>
 
-  <footer class="foot">
-    <span class="micro-label">PROXIMITY+ © 2026 · <span>MIT LICENSE</span></span>
-    <span class="micro-label">SOURCE · <a href="https://github.com/nithilan-alt-f4/proximity-">GITHUB / NITHILAN-ALT-F4 / PROXIMITY-</a></span>
-    <span class="micro-label"><span>TELEMETRY&nbsp;·&nbsp;</span>MUSIC FILES NEVER LEAVE YOUR MACHINE</span>
-  </footer>
+    <div class="divider">
+      <span class="label">02 / ACQUIRE BINARY</span>
+      <span class="label right">DIRECT DOWNLOAD</span>
+    </div>
+
+    <div class="grid">
+      <article class="card">
+        <div class="card-head">
+          <h2>WINDOWS</h2>
+          <span class="chip">WIN 10 / 11 · 64-BIT</span>
+        </div>
+        <div class="card-body">
+          <p>
+            Classic setup wizard — pick your install location, desktop shortcut included.
+            Windows may flag the unsigned build: <b>More info → Run anyway</b>.
+          </p>
+          <div class="actions">
+            <a class="btn" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.Setup.1.0.1.exe">
+              ↓ INSTALLER <span class="size" id="sz-setup"></span>
+            </a>
+            <a class="btn ghost" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.1.0.1.exe">
+              ↓ PORTABLE <span class="size" id="sz-portable"></span>
+            </a>
+          </div>
+          <div class="card-foot"><span>No admin required · Portable = single file</span></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>MACOS</h2>
+          <span class="chip">DMG · TWO CHIPS</span>
+        </div>
+        <div class="card-body">
+          <p>
+            Match your chip: Apple Silicon for M-series Macs, Intel for everything older.
+            Unsigned build — right-click the app and <b>Open</b> the first launch.
+          </p>
+          <div class="actions">
+            <a class="btn" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1-arm64.dmg">
+              ↓ APPLE SILICON <span class="size" id="sz-arm"></span>
+            </a>
+            <a class="btn ghost" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.1.dmg">
+              ↓ INTEL <span class="size" id="sz-intel"></span>
+            </a>
+          </div>
+          <div class="card-foot"><span>M1 / M2 / M3 / M4 · Or legacy Intel</span></div>
+        </div>
+      </article>
+    </div>
+
+    <footer>
+      <span>PROXIMITY+ © 2026 · MIT LICENSE</span>
+      <span>SOURCE · <a href="https://github.com/nithilan-alt-f4/proximity-">GITHUB</a></span>
+      <span>FILES NEVER LEAVE YOUR MACHINE</span>
+    </footer>
+  </div>
 
   <script>
     (function () {
       "use strict";
-
       var API = "https://api.github.com/repos/nithilan-alt-f4/proximity-/releases/latest";
-      var reduceMotion = window.matchMedia
-        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-      /* ---- Clock -------------------------------------------------- */
-      var clockEl = document.getElementById("clock");
-      function tick() {
-        if (clockEl) {
-          var d = new Date();
-          var p = function (n) { return (n < 10 ? "0" : "") + n; };
-          clockEl.textContent = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
-        }
-      }
-      tick();
-      setInterval(tick, 1000);
-
-      /* ---- Release asset wiring (direct download, no redirects) -- */
-      var fmt = function (bytes) {
-        return bytes ? Math.round(bytes / 1024 / 1024) + " MB" : "";
-      };
-      var setHref = function (id, url) {
-        var el = document.getElementById(id);
-        if (el) { el.href = url; }
-      };
 
       fetch(API, { headers: { "Accept": "application/vnd.github+json" } })
-        .then(function (r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        })
+        .then(function (r) { if (!r.ok) throw 0; return r.json(); })
         .then(function (rel) {
-          if (!rel || !rel.assets || !rel.assets.length) throw new Error("no assets");
+          if (!rel || !rel.assets || !rel.assets.length) throw 0;
           var find = function (re) {
             for (var i = 0; i < rel.assets.length; i++) {
               if (re.test(rel.assets[i].name)) return rel.assets[i];
             }
             return null;
           };
+          var mb = function (b) { return b ? Math.round(b / 1024 / 1024) + " MB" : ""; };
           var setup = find(/Setup.*\.exe$/i);
           var portable = find(/^(?!.*Setup).*\.exe$/i);
-          var dmgArm = find(/arm64\.dmg$/i);
-          var dmgIntel = find(/^(?!.*arm64).*\.dmg$/i);
+          var arm = find(/arm64\.dmg$/i);
+          var intel = find(/^(?!.*arm64).*\.dmg$/i);
 
-          if (setup) {
-            setHref("dl-win-setup", setup.browser_download_url);
-            var s1 = document.getElementById("size-win-setup"); if (s1) s1.textContent = fmt(setup.size);
-          }
-          if (portable) {
-            setHref("dl-win-portable", portable.browser_download_url);
-            var s2 = document.getElementById("size-win-portable"); if (s2) s2.textContent = fmt(portable.size);
-          }
-          if (dmgArm) {
-            setHref("dl-mac-arm", dmgArm.browser_download_url);
-            var s3 = document.getElementById("size-mac-arm"); if (s3) s3.textContent = fmt(dmgArm.size);
-          }
-          if (dmgIntel) {
-            setHref("dl-mac-intel", dmgIntel.browser_download_url);
-            var s4 = document.getElementById("size-mac-intel"); if (s4) s4.textContent = fmt(dmgIntel.size);
-          }
+          // Update sizes + hrefs to latest release
+          var pairs = [
+            ["sz-setup", setup],
+            ["sz-portable", portable],
+            ["sz-arm", arm],
+            ["sz-intel", intel]
+          ];
+          pairs.forEach(function (p) {
+            var span = document.getElementById(p[0]);
+            var asset = p[1];
+            if (span && asset) span.textContent = mb(asset.size);
+            var link = span && span.closest("a");
+            if (link && asset) link.href = asset.browser_download_url;
+          });
 
-          // Version stamps: topbar readout, hero numeral, serial
+          // Version stamp
           var ver = (rel.tag_name || "").replace(/^v/i, "");
-          var vr = document.getElementById("ver-readout");
-          if (vr && ver) vr.textContent = "V" + ver;
-          var hn = document.getElementById("hero-numeral");
-          if (hn && ver) hn.textContent = ver;
-          var sn = document.getElementById("rig-serial");
-          if (sn && rel.published_at) {
-            sn.innerHTML = "SN&nbsp;" + String(new Date(rel.published_at).getFullYear()) + "-" +
-              ("0" + rel.published_at.slice(5, 7)).slice(-2);
-          }
+          var vr = document.getElementById("ver");
+          if (vr && ver) vr.textContent = "v" + ver;
         })
         .catch(function () {
-          // API unavailable or rate-limited — buttons already have hardcoded
-          // direct download URLs in HTML, so they still work. Just update stamps.
-          var vr = document.getElementById("ver-readout");
-          if (vr) vr.textContent = "v1.0.2";
-          var hn = document.getElementById("hero-numeral");
-          if (hn) hn.textContent = "1.0.2";
+          // API failed — hardcoded URLs in HTML still work.
         });
-
-      /* ---- 3D rigs ------------------------------------------------- */
-      function attachTilt(zoneEl, targetEl, maxDeg, baseRot) {
-        if (!zoneEl || !targetEl || reduceMotion || !window.matchMedia("(pointer: fine)").matches) return;
-        var raf = null;
-        var resting = true;
-        // While actively tracking the pointer, kill the transition so per-frame
-        // transforms are instant; restore it only for the snap-back on leave.
-        zoneEl.addEventListener("pointerenter", function () {
-          resting = false;
-          targetEl.classList.add("tilting");
-        });
-        zoneEl.addEventListener("pointermove", function (e) {
-          var rect = zoneEl.getBoundingClientRect();
-          var px = (e.clientX - rect.left) / rect.width - 0.5;
-          var py = (e.clientY - rect.top) / rect.height - 0.5;
-          if (raf) return;
-          raf = requestAnimationFrame(function () {
-            raf = null;
-            targetEl.style.transform =
-              "rotateX(" + (baseRot.x + -py * maxDeg).toFixed(2) + "deg) rotateY(" +
-              (baseRot.y + px * maxDeg).toFixed(2) + "deg)" +
-              (baseRot.z ? " rotateZ(" + baseRot.z + "deg)" : "");
-          });
-        });
-        zoneEl.addEventListener("pointerleave", function () {
-          resting = true;
-          targetEl.classList.remove("tilting");
-          targetEl.style.transform = "";
-        });
-      }
-
-      // Hero plate rig: parallax continuation of its resting pose
-      var rig = document.getElementById("rig-stack");
-      var rigZone = document.getElementById("hero-rig");
-      attachTilt(rigZone, rig, 10, { x: 14, y: -16, z: 2 });
-
-      // Download cards: gentle counter-tilt, snap back on leave
-      var cards = document.querySelectorAll(".dl-card");
-      for (var c = 0; c < cards.length; c++) {
-        (function (card) {
-          if (reduceMotion || !window.matchMedia("(pointer: fine)").matches) return;
-          var raf = null;
-          card.addEventListener("pointerenter", function () {
-            card.classList.add("tilting");
-          });
-          card.addEventListener("pointermove", function (e) {
-            var rect = card.getBoundingClientRect();
-            var px = (e.clientX - rect.left) / rect.width - 0.5;
-            var py = (e.clientY - rect.top) / rect.height - 0.5;
-            if (raf) return;
-            raf = requestAnimationFrame(function () {
-              raf = null;
-              card.style.transform =
-                "rotateX(" + (-py * 5).toFixed(2) + "deg) rotateY(" + (px * 6).toFixed(2) + "deg)";
-            });
-          });
-          card.addEventListener("pointerleave", function () {
-            card.classList.remove("tilting");
-            card.style.transform = "";
-          });
-        })(cards[c]);
-      }
     })();
   </script>
 </body>
