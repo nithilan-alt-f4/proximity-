@@ -401,46 +401,15 @@
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 28px;
-      perspective: 800px;
     }
     .dl-card {
-      position: relative;
       display: flex;
       min-width: 0;
       flex-direction: column;
       border: 1px solid var(--ink);
       background: var(--paper);
       box-shadow: 10px 10px 0 var(--ink);
-      transform: rotateX(0) rotateY(0);
-      transition: transform .35s var(--ease-mechanical), box-shadow .35s var(--ease-mechanical);
-      will-change: transform;
     }
-    /* Slab edge: visible thickness on the left side */
-    .dl-card::before {
-      content: "";
-      position: absolute;
-      left: -7px;
-      top: 3px;
-      bottom: -3px;
-      width: 7px;
-      background: var(--ink);
-      transform: skewY(-4deg);
-      transform-origin: top right;
-      pointer-events: none;
-    }
-    /* Surface highlight on hover */
-    .dl-card::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,.06) 0%, transparent 50%);
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity .35s var(--ease-mechanical);
-      z-index: 10;
-    }
-    .dl-card:hover::after { opacity: 1; }
-    .dl-card.tilting { transition: none !important; }
     .dl-head {
       display: flex;
       align-items: center;
@@ -588,7 +557,6 @@
       .hero-rig::before { animation: none; opacity: 0; }
       .status-dot { animation: none; }
       .dl-card, .rig-stack, .btn { transition: none !important; }
-      .dl-card::before, .dl-card::after { transition: none !important; }
     }
   </style>
 </head>
@@ -738,9 +706,8 @@
   </main>
 
   <footer class="foot">
-    <span class="micro-label">PROXIMITY+ © 2026 · <span>MIT LICENSE</span></span>
-    <span class="micro-label">SOURCE · <a href="https://github.com/nithilan-alt-f4/proximity-">GITHUB / NITHILAN-ALT-F4 / PROXIMITY-</a></span>
-    <span class="micro-label"><span>TELEMETRY&nbsp;·&nbsp;</span>MUSIC FILES NEVER LEAVE YOUR MACHINE</span>
+    <span class="micro-label">SOURCE · <a href="https://github.com/nithilan-alt-f4/proximity-">GITHUB</a></span>
+    <span class="micro-label">MUSIC FILES NEVER LEAVE YOUR MACHINE</span>
   </footer>
 
   <script>
@@ -863,53 +830,6 @@
       var rig = document.getElementById("rig-stack");
       var rigZone = document.getElementById("hero-rig");
       attachTilt(rigZone, rig, 10, { x: 14, y: -16, z: 2 });
-
-      // Blueprint Slab — download card 3D tilt
-      // Completely new system: cursor-tracked rotation + dynamic shadow offset.
-      // No preserve-3d, no child layering, no plate divs. Just rotateX/Y on the
-      // card itself and a shadow that shifts opposite to the tilt direction.
-      var slabCards = document.querySelectorAll(".dl-card");
-      var MAX_SLAB_TILT = 6;   // degrees
-      var MAX_SHADOW = 14;     // px
-      var BASE_SHADOW = 10;    // px
-
-      for (var s = 0; s < slabCards.length; s++) {
-        (function (card) {
-          if (reduceMotion || !window.matchMedia("(pointer: fine)").matches) return;
-          var raf = null;
-
-          card.addEventListener("pointerenter", function () {
-            card.classList.add("tilting");
-          });
-
-          card.addEventListener("pointermove", function (e) {
-            var rect = card.getBoundingClientRect();
-            // Normalized cursor position: -0.5 to +0.5
-            var nx = (e.clientX - rect.left) / rect.width - 0.5;
-            var ny = (e.clientY - rect.top) / rect.height - 0.5;
-            if (raf) return;
-            raf = requestAnimationFrame(function () {
-              raf = null;
-              // Tilt toward cursor
-              var rotX = -ny * MAX_SLAB_TILT;
-              var rotY = nx * MAX_SLAB_TILT;
-              card.style.transform =
-                "rotateX(" + rotX.toFixed(2) + "deg) rotateY(" + rotY.toFixed(2) + "deg)";
-              // Shadow shifts opposite to tilt
-              var shX = BASE_SHADOW - nx * MAX_SHADOW;
-              var shY = BASE_SHADOW - ny * MAX_SHADOW;
-              card.style.boxShadow =
-                shX.toFixed(1) + "px " + shY.toFixed(1) + "px 0 var(--ink)";
-            });
-          });
-
-          card.addEventListener("pointerleave", function () {
-            card.classList.remove("tilting");
-            card.style.transform = "";
-            card.style.boxShadow = "";
-          });
-        })(slabCards[s]);
-      }
 
     })();
   </script>
