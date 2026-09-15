@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { AudioProvider, useAudio } from "./context/AudioContext";
 import { SongUploader } from "./components/SongUploader";
 import { LyricsViewer } from "./components/LyricsViewer";
@@ -8,8 +8,9 @@ import { MusicPlayer } from "./components/MusicPlayer";
 import { FullscreenPlayer } from "./components/FullscreenPlayer";
 import { QueueManager } from "./components/QueueManager";
 import { HistoryDrawer } from "./components/HistoryDrawer";
-import { Plus, X, Pause as PauseIcon, Maximize2, Trash2, Play, Pencil, Check, Music, Sun, Moon, History as HistoryIcon } from "lucide-react";
-import { AnimatePresence } from "motion/react";
+import { TiltCard } from "./components/TiltCard";
+import { Plus, X, Pause as PauseIcon, Maximize2, Trash2, Play, Pencil, Check, Music, Sun, Moon, History as HistoryIcon, ImagePlus } from "lucide-react";
+import { AnimatePresence, MotionConfig } from "motion/react";
 import { useTheme } from "./hooks/useTheme";
 import type { Song, Playlist } from "./lib/db";
 
@@ -115,8 +116,23 @@ function PlaylistGrid({ songs, playlists, activePlaylistId, onOpen, onPlay, onGo
   songs: Song[]; playlists: Playlist[]; activePlaylistId: string | null;
   onOpen: (pl: Playlist | null) => void; onPlay: (id: string | null) => void; onGoUpload: () => void;
 }) {
-  const { deletePlaylist } = useAudio();
+  const { deletePlaylist, setPlaylistCover } = useAudio();
   const allActive = activePlaylistId === null && (songs.length > 0);
+  const gridCoverInputRef = useRef<HTMLInputElement>(null);
+  const gridCoverTargetRef = useRef<string | null>(null);
+
+  const onGridCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetId = gridCoverTargetRef.current;
+    if (!file || !targetId) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      if (dataUrl) setPlaylistCover(targetId, dataUrl);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
 
   return (
     <div className="lib-body">
@@ -151,29 +167,39 @@ function PlaylistGrid({ songs, playlists, activePlaylistId, onOpen, onPlay, onGo
           const active = activePlaylistId === pl.id;
           return (
             <div key={pl.id} className="pl-card-wrap">
-              <button
-                className="pl-card"
-                onClick={() => { if (inPl.length > 0 || pl.songIds.length === 0) onOpen(pl); }}
-              >
-                <div className="pl-card-cover">
-                  {pl.cover ? (
-                    <img src={pl.cover} alt="" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="pl-card-cover-fallback">
-                      <Music size={22} />
-                      <span>{pl.name.charAt(0).toUpperCase()}</span>
-                    </div>
-                  )}
-                  <button
-                    className="pl-card-play"
-                    onClick={(e) => { e.stopPropagation(); onPlay(pl.id); }}
-                    title={`Play ${pl.name}`}
-                  ><Play size={16} fill="currentColor" /></button>
+              <TiltCard className="pl-card-tilt">
+                <div
+                  className="pl-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { if (inPl.length > 0 || pl.songIds.length === 0) onOpen(pl); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (inPl.length > 0 || pl.songIds.length === 0) onOpen(pl); } }}
+                >
+                  <div className="pl-card-cover">
+                    {pl.cover ? (
+                      <img src={pl.cover} alt="" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="pl-card-cover-fallback">
+                        <Music size={22} />
+                        <span>{pl.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                    )}
+                    <button
+                      className="pl-card-play"
+                      onClick={(e) => { e.stopPropagation(); onPlay(pl.id); }}
+                      title={`Play ${pl.name}`}
+                    ><Play size={16} fill="currentColor" /></button>
+                    <button
+                      className="pl-card-cover-btn"
+                      onClick={(e) => { e.stopPropagation(); gridCoverTargetRef.current = pl.id; gridCoverInputRef.current?.click(); }}
+                      title={`Set cover for ${pl.name}`}
+                    ><ImagePlus size={13} /></button>
+                  </div>
+                  <div className="pl-card-title"><span>{pl.name}</span></div>
+                  <div className="pl-card-sub">{inPl.length} TRACKS</div>
+                  {active && <span className="pl-now"><RadioIcon /> NOW SPINNING</span>}
                 </div>
-                <div className="pl-card-title"><span>{pl.name}</span></div>
-                <div className="pl-card-sub">{inPl.length} TRACKS</div>
-                {active && <span className="pl-now"><RadioIcon /> NOW SPINNING</span>}
-              </button>
+              </TiltCard>
               <button className="pl-card-del" onClick={(e) => { e.stopPropagation(); if (confirm(`Delete playlist "${pl.name}"?`)) deletePlaylist(pl.id); }} title="Delete playlist"><Trash2 size={11} /></button>
             </div>
           );
@@ -186,22 +212,37 @@ function PlaylistGrid({ songs, playlists, activePlaylistId, onOpen, onPlay, onGo
           <div className="pl-card-sub">UPLOAD OR CREATE</div>
         </button>
       </div>
+
+      <input ref={gridCoverInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onGridCoverUpload} />
     </div>
   );
 }
 
 /* ---------------- LIBRARY DETAIL (playlist browse / upload) ---------------- */
 function LibraryDetail({ onBack }: { onBack: () => void }) {
-  const { playlists, activePlaylistId, songs, currentSong, playSong, isPlaying, playPlaylist, updatePlaylistDescription, createPlaylist } = useAudio();
+  const { playlists, activePlaylistId, songs, currentSong, playSong, isPlaying, playPlaylist, updatePlaylistDescription, createPlaylist, setPlaylistCover } = useAudio();
   const [mode, setMode] = useState<"browse" | "upload" | "new">("browse");
   const [newName, setNewName] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; song: Song } | null>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) || null;
   const listSongs = playlistSongs(activePlaylist, songs, activePlaylistId === null);
   const tracks = activePlaylist ? listSongs : songs;
+
+  const onCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activePlaylist) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      if (dataUrl) setPlaylistCover(activePlaylist.id, dataUrl);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
 
   const saveDesc = async () => {
     if (activePlaylist && activePlaylist.id) {
@@ -262,6 +303,26 @@ function LibraryDetail({ onBack }: { onBack: () => void }) {
                 <div className="pl-detail-actions">
                   <button className="merge-btn merge-play" onClick={() => playPlaylist(activePlaylist.id)}><Play size={16} fill="currentColor" /> PLAY PLAYLIST</button>
                   <span className="micro-label">SHUFFLE OFF · ORDER AS LISTED</span>
+                </div>
+                <div className="pl-cover-bar">
+                  <button className="eq-profile-btn" onClick={() => coverInputRef.current?.click()}>
+                    <ImagePlus size={12} /> UPLOAD COVER IMAGE
+                  </button>
+                  <input ref={coverInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onCoverUpload} />
+                  {(() => {
+                    const covers = Array.from(new Set(listSongs.filter((s) => s.albumCover).map((s) => s.albumCover as string)));
+                    if (covers.length === 0) return null;
+                    return (
+                      <div className="pl-cover-source">
+                        <span className="micro-label">OR PICK:</span>
+                        {covers.map((c) => (
+                          <button key={c} className={`pl-cover-pick ${activePlaylist.cover === c ? "pl-cover-pick-on" : ""}`} onClick={() => setPlaylistCover(activePlaylist.id, c)} title="Use this artwork">
+                            <img src={c} alt="" referrerPolicy="no-referrer" />
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -420,8 +481,10 @@ const QueueIcon = () => (<span style={{ display: "inline-flex", width: 12, heigh
 
 export default function App() {
   return (
-    <AudioProvider>
-      <Dashboard />
-    </AudioProvider>
+    <MotionConfig reducedMotion="user">
+      <AudioProvider>
+        <Dashboard />
+      </AudioProvider>
+    </MotionConfig>
   );
 }

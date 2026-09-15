@@ -492,6 +492,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transition: transform 140ms ease, background 140ms ease;
 }
 .pl-card-play:hover { background: var(--ink); color: var(--paper); transform: scale(1.06); }
+.pl-card-cover-btn {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
+  z-index: 3;
+}
+.pl-card-cover-btn:hover { background: var(--ink); color: var(--paper); transform: scale(1.08); }
+.pl-card-wrap:hover .pl-card-cover-btn,
+.pl-card-cover-btn:focus-visible { opacity: 1; }
 .pl-card-title {
   display: flex;
   align-items: center;
@@ -543,7 +562,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .pl-now svg { color: var(--red); align-self: center; }
 .pl-card-del {
   position: absolute;
+  left: 8px;
   top: 8px;
+  z-index: 5;
   right: 8px;
   display: inline-flex;
   width: 26px;
@@ -674,6 +695,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   resize: vertical;
 }
 .pl-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.pl-cover-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.pl-cover-source { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pl-cover-pick {
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  line-height: 0;
+  transition: transform 140ms var(--ease-mechanical), border-color 140ms ease;
+}
+.pl-cover-pick:hover { transform: translateY(-2px); border-color: var(--ink); }
+.pl-cover-pick-on { border: 2px solid var(--red); }
+.pl-cover-pick img { width: 36px; height: 36px; object-fit: cover; display: block; }
 .merge-btn {
   display: inline-flex;
   align-items: center;
@@ -1019,4 +1060,81 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border: 0; bo
   .fs-lyrics-scroll { padding: 32px 14px; }
   .fs-lyric { font-size: 15px; }
   .fs-queue-menu { right: -30px; }
+}
+
+/* ================================================================
+   MOTION LAYER — 3D tilt, sheen sweeps, staggered reveals
+   Industrial Redline edition: all transform/opacity only (GPU-safe),
+   pointer-only tilt, disabled under prefers-reduced-motion.
+   ================================================================ */
+
+/* -- 3D tilt cards (TiltCard component) -- */
+.tilt-card { transform: perspective(900px); transition: transform 220ms var(--ease-mechanical), box-shadow 220ms var(--ease-mechanical); }
+.tilt-card.tilt-active { will-change: transform; transition: transform 90ms ease-out, box-shadow 90ms ease-out; }
+.tilt-card.tilt-active::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%); transform: translateX(-130%); pointer-events: none; z-index: 4; animation: tilt-sheen 900ms var(--ease-mechanical) forwards; }
+@keyframes tilt-sheen { to { transform: translateX(130%); } }
+
+/* Playlist grid: cover zoom inside cards while tilting */
+.pl-card-wrap:hover .pl-card-cover img { transform: scale(1.06); }
+.pl-card-cover img { transition: transform 380ms var(--ease-mechanical); }
+
+/* Cover image zoom on detail hero */
+.pl-detail-cover img { transition: transform 420ms var(--ease-mechanical); }
+.pl-detail-cover:hover img { transform: scale(1.05); }
+
+/* -- Staggered entry reveals (grid cards) --
+   Delay slots live on the grid children; the animation itself runs on the
+   .pl-card. fill-mode "backwards" only — after it ends, the card's normal
+   hover transform keeps working. */
+.pl-grid > * { --rise-delay: 390ms; }
+.pl-grid > *:nth-child(1) { --rise-delay: 30ms; }
+.pl-grid > *:nth-child(2) { --rise-delay: 75ms; }
+.pl-grid > *:nth-child(3) { --rise-delay: 120ms; }
+.pl-grid > *:nth-child(4) { --rise-delay: 165ms; }
+.pl-grid > *:nth-child(5) { --rise-delay: 210ms; }
+.pl-grid > *:nth-child(6) { --rise-delay: 255ms; }
+.pl-grid > *:nth-child(7) { --rise-delay: 300ms; }
+.pl-grid > *:nth-child(8) { --rise-delay: 345ms; }
+.pl-grid .pl-card { animation: pl-rise 480ms var(--ease-mechanical) backwards; animation-delay: var(--rise-delay, 390ms); }
+@keyframes pl-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* -- Fullscreen: turntable 3D entrance + subtle idle float -- */
+.fs-turntable .turntable-wrap { animation: fs-float 7s ease-in-out infinite alternate; }
+@keyframes fs-float {
+  from { transform: translateY(-4px) rotateX(1.5deg) rotateY(-2deg); }
+  to { transform: translateY(4px) rotateX(-1.5deg) rotateY(2deg); }
+}
+
+/* Record gets a depth shadow while spinning */
+.record-spinning { filter: drop-shadow(0 10px 22px rgba(0,0,0,0.18)); }
+
+/* -- Fullscreen play button sheen sweep -- */
+.fs-btn-play { position: relative; overflow: hidden; }
+.fs-btn-play::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%); transform: translateX(-130%); }
+.fs-btn-play:hover::after { animation: btn-sheen 650ms var(--ease-mechanical) forwards; }
+@keyframes btn-sheen { to { transform: translateX(130%); } }
+
+/* -- Track rows: slide nudge -- */
+.track-row { transition: background 140ms var(--ease-mechanical), transform 140ms var(--ease-mechanical), padding-left 140ms var(--ease-mechanical); }
+.track-row:hover { transform: translateX(3px); }
+
+/* -- Headbar actions: micro-lift -- */
+.lib-action { transition: transform 150ms var(--ease-mechanical), background 150ms var(--ease-mechanical), color 150ms var(--ease-mechanical); }
+.lib-action:hover { transform: translateY(-1px); }
+.lib-action:active { transform: translateY(0) scale(.97); }
+
+/* -- Reduced motion: everything above OFF -- */
+@media (prefers-reduced-motion: reduce) {
+  .tilt-card, .tilt-card.tilt-active { transition: none; }
+  .tilt-card.tilt-active::after { animation: none; content: none; }
+  .pl-grid .pl-card { animation: none; opacity: 1; }
+  .fs-turntable .turntable-wrap { animation: none; }
+  .record-spinning { filter: none; }
+  .pl-card-wrap:hover .pl-card-cover img { transform: none; }
+  .pl-detail-cover:hover img { transform: none; }
+  .track-row:hover { transform: none; }
+  .lib-action:hover, .lib-action:active { transform: none; }
 }

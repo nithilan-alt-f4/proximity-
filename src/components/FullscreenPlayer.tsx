@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { motion } from "motion/react";
 import { useAudio } from "../context/AudioContext";
 import type { Song } from "../lib/db";
 import { Visualizer } from "./Visualizer";
@@ -217,10 +218,16 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose, isD
           </div>
         </div>
         <div className="fs-idle">
-          <div className="fs-idle-disc" aria-hidden="true">
+          <motion.div
+            className="fs-idle-disc"
+            aria-hidden="true"
+            initial={{ opacity: 0, scale: 0.8, rotateX: -18 }}
+            animate={{ opacity: 1, scale: 1, rotateX: 0 }}
+            transition={{ type: "spring", stiffness: 110, damping: 15, mass: 1 }}
+          >
             <span className="fs-idle-disc-grooves" />
             <span className="fs-idle-disc-label">P+</span>
-          </div>
+          </motion.div>
           <h1 className="fs-idle-title">ARCHIVE EMPTY</h1>
           <p className="fs-idle-sub">
             {songs.length === 0
@@ -236,7 +243,12 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose, isD
   }
 
   const turntableEl = (
-    <div className="fs-turntable">
+    <motion.div
+      className="fs-turntable"
+      initial={{ opacity: 0, y: 34, rotateX: -14, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 120, damping: 16, mass: 0.9 }}
+    >
       <div className="turntable-wrap" style={{ width: "100%" }}>
         <div className="turntable-shadow" />
         <div className={`record ${isPlaying ? "record-spinning" : ""}`}>
@@ -259,7 +271,7 @@ export const FullscreenPlayer: React.FC<FullscreenPlayerProps> = ({ onClose, isD
         </div>
         <div className={`turntable-led ${isPlaying ? "pulse-red" : ""}`} />
       </div>
-    </div>
+    </motion.div>
   );
 
   const playerControlsEl = (

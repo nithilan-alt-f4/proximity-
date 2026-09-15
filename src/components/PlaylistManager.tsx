@@ -1,7 +1,6 @@
 ﻿import React, { useState, useRef } from "react";
 import { useAudio } from "../context/AudioContext";
 import { Plus, Trash2, Music, ChevronRight, ImagePlus, Check } from "lucide-react";
-import audioDb from "../lib/db";
 import type { Song } from "../lib/db";
 
 const songInPlaylist = (playlist: { songIds: string[] }, songs: Song[]): Song[] => {
@@ -10,7 +9,7 @@ const songInPlaylist = (playlist: { songIds: string[] }, songs: Song[]): Song[] 
 };
 
 export const PlaylistManager: React.FC = () => {
-  const { playlists, activePlaylistId, setActivePlaylistId, createPlaylist, deletePlaylist, songs, loadPlaylists } = useAudio();
+  const { playlists, activePlaylistId, setActivePlaylistId, createPlaylist, deletePlaylist, songs, loadPlaylists, setPlaylistCover } = useAudio();
   const [playlistName, setPlaylistName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [coverUI, setCoverUI] = useState<string | null>(null);
@@ -29,9 +28,7 @@ export const PlaylistManager: React.FC = () => {
 
   const saveCover = async (cover: string) => {
     if (!activePlaylist) return;
-    const updated = { ...activePlaylist, cover };
-    await audioDb.savePlaylist(updated);
-    await loadPlaylists();
+    await setPlaylistCover(activePlaylist.id, cover);
     setCoverUI(null);
     setCoverPreview("");
   };

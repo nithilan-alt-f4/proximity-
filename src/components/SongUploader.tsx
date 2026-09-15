@@ -33,6 +33,13 @@ interface GroupTarget {
 
 const LOOSE_GROUP_ID = "loose";
 
+// Supported audio formats. MP3/M4A/FLAC all play natively in Chromium and all
+// carry readable embedded tags (ID3v2 / MP4 atoms / Vorbis comments) that
+// jsmediatags parses without extra config.
+const AUDIO_EXTENSIONS = /\.(mp3|m4a|mp4|flac)$/i;
+const isAudioFile = (file: File): boolean =>
+  AUDIO_EXTENSIONS.test(file.name) || /^audio\//i.test(file.type);
+
 const traverseFileTree = async (entry: any): Promise<File[]> => {
   return new Promise((resolve) => {
     if (entry.isFile) {
@@ -165,7 +172,7 @@ export const SongUploader: React.FC = () => {
   const ensureGroup = (name: string, isFolder: boolean, created: Record<string, string>): string => {
     const key = (isFolder ? "F:" : "L:") + name;
     if (created[key]) return created[key];
-    // Single shared loose-files bucket â€” reuse it if it already exists.
+    // Single shared loose-files bucket — reuse it if it already exists.
     if (!isFolder && groups.some((g) => g.id === LOOSE_GROUP_ID)) {
       created[key] = LOOSE_GROUP_ID;
       return LOOSE_GROUP_ID;
@@ -176,7 +183,7 @@ export const SongUploader: React.FC = () => {
     setGroupTargets((prev) => ({
       ...prev,
       // Folders: default to "New Playlist..." pre-filled with the folder name so the
-      // user just confirms it â€” we do NOT auto-create a playlist behind the scenes.
+      // user just confirms it — we do NOT auto-create a playlist behind the scenes.
       [id]: isFolder ? { option: "new", playlistId: "", newName: name } : { option: "none", playlistId: "", newName: "" },
     }));
     return id;
@@ -191,11 +198,11 @@ export const SongUploader: React.FC = () => {
   };
 
   const handleFilesList = async (files: File[], groupId: string, groupName?: string) => {
-    const mp3Files = files.filter((file) => file.type === "audio/mpeg" || file.name.endsWith(".mp3"));
-    if (mp3Files.length === 0) return;
+    const audioFiles = files.filter(isAudioFile);
+    if (audioFiles.length === 0) return;
     setIsUploading(true);
-    setUploadProgressMsg(groupName ? `Reading metadata from "${groupName}"...` : "Reading MP3 metadata...");
-    const initialStaged = await Promise.all(mp3Files.map(async (f) => { const st = await processFile(f); st.groupId = groupId; return st; }));
+    setUploadProgressMsg(groupName ? `Reading metadata from "${groupName}"...` : "Reading audio metadata...");
+    const initialStaged = await Promise.all(audioFiles.map(async (f) => { const st = await processFile(f); st.groupId = groupId; return st; }));
     setStagedFiles((prev) => [...prev, ...initialStaged]);
     setIsUploading(false);
 
@@ -274,14 +281,14 @@ export const SongUploader: React.FC = () => {
         const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
         if (entry) {
           if (entry.isDirectory) {
-            folderPromises.push((async () => { const traversed = await traverseFileTree(entry); return { folderName: entry.name, files: traversed.filter((f: File) => f.type === "audio/mpeg" || f.name.endsWith(".mp3")) }; })());
+            folderPromises.push((async () => { const traversed = await traverseFileTree(entry); return { folderName: entry.name, files: traversed.filter(isAudioFile) }; })());
           } else {
             const file = item.getAsFile();
-            if (file && (file.type === "audio/mpeg" || file.name.endsWith(".mp3"))) looseFiles.push(file);
+            if (file && isAudioFile(file)) looseFiles.push(file);
           }
         } else {
           const file = item.getAsFile();
-          if (file && (file.type === "audio/mpeg" || file.name.endsWith(".mp3"))) looseFiles.push(file);
+          if (file && isAudioFile(file)) looseFiles.push(file);
         }
       }
     }
@@ -490,10 +497,10 @@ export const SongUploader: React.FC = () => {
         onClick={() => fileInputRef.current?.click()}
         className={`upload-zone ${isDraggingOver ? "upload-zone-drag" : ""}`}
       >
-        <input ref={fileInputRef} type="file" accept="audio/mp3, audio/mpeg" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
+        <input ref={fileInputRef} type="file" accept=".mp3,.m4a,.flac,audio/mpeg,audio/mp4,audio/x-m4a,audio/flac,audio/x-flac" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
         <Upload size={20} style={{ color: "var(--text-muted)" }} />
         <span style={{ fontSize: 11, fontWeight: 600 }}>Drag & drop music files or folders</span>
-        <span className="micro-label">MP3 ONLY â€” METADATA READ FROM ID3 TAGS â€” FOLDERS AUTO-CONVERT TO PLAYLISTS</span>
+        <span className="micro-label">MP3 · M4A · FLAC — METADATA READ FROM EMBEDDED TAGS — FOLDERS AUTO-CONVERT TO PLAYLISTS</span>
       </div>
 
       {isUploading && (
@@ -580,13 +587,13 @@ export const SongUploader: React.FC = () => {
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <span style={{ fontSize: 11, fontWeight: 600, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{staged.file.name}</span>
-                              <span className="micro-label">MP3 / {formatDuration(staged.duration)}</span>
+                              <span className="micro-label">{staged.file.name.split(".").pop()?.toUpperCase() || "AUDIO"} / {formatDuration(staged.duration)}</span>
                             </div>
                           </div>
                           {staged.isIdentifying ? (
                             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 6 }}>
                               <div style={{ width: 10, height: 10, border: "1px solid var(--line)", borderTop: "2px solid var(--red)", animation: "spin-record 1s linear infinite" }} />
-                              <span className="micro-label">READING ID3 TAGS...</span>
+                              <span className="micro-label">READING TAGS...</span>
                             </div>
                           ) : (
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>

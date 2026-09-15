@@ -55,6 +55,7 @@ interface AudioContextType {
   addToQueue: (song: Song) => void;
   playPlaylist: (playlistId: string | null) => void;
   updatePlaylistDescription: (playlistId: string, description: string) => Promise<void>;
+  setPlaylistCover: (playlistId: string, cover: string) => Promise<void>;
 }
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -454,6 +455,19 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     if (!pl) return;
     const updated = { ...pl, description };
+    await audioDb.savePlaylist(updated);
+    await loadPlaylists();
+  };
+
+  // Set a playlist cover from any source (uploaded image dataURL, song artwork, etc.)
+  const setPlaylistCover = async (playlistId: string, cover: string) => {
+    let pl = playlists.find((p) => p.id === playlistId);
+    if (!pl) {
+      const allPl = await audioDb.getAllPlaylists();
+      pl = allPl.find((p) => p.id === playlistId);
+    }
+    if (!pl) return;
+    const updated = { ...pl, cover };
     await audioDb.savePlaylist(updated);
     await loadPlaylists();
   };
@@ -913,6 +927,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addToQueue,
         playPlaylist,
         updatePlaylistDescription,
+        setPlaylistCover,
       }}
     >
       {children}
