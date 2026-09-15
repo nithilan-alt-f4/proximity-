@@ -183,12 +183,29 @@
     console.log("[Preview] Seed complete! Refresh to see songs.");
   }
 
-  // Run seeding before React mounts
-  seed().catch(function (e) { console.error("[Preview] Seed error:", e); });
+  // Run seeding, then inject React
+  seed()
+    .then(function () {
+      // Seeding done — now load React
+      var s = document.createElement("script");
+      s.type = "module";
+      s.crossOrigin = "";
+      s.src = "./assets/index-B6jJEF4d.js";
+      document.head.appendChild(s);
+      console.log("[Preview] React injected after seed.");
+    })
+    .catch(function (e) {
+      console.error("[Preview] Seed error:", e);
+      // Load React anyway so the page isn't blank
+      var s = document.createElement("script");
+      s.type = "module";
+      s.crossOrigin = "";
+      s.src = "./assets/index-B6jJEF4d.js";
+      document.head.appendChild(s);
+    });
 })();
 </script>
 
-    <script type="module" crossorigin src="./assets/index-B6jJEF4d.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-CV7ZBrf7.css">
   </head>
   <body>
