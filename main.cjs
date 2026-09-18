@@ -33,8 +33,14 @@ function checkPortFree(port) {
 }
 
 async function findFreePort() {
+  // Try each fixed port up to 3 times (TIME_WAIT on Windows may hold a port
+  // briefly after the previous instance exits).  Retrying the same port a few
+  // times with a short delay is more reliable than immediately falling through.
   for (const port of FIXED_PORTS) {
-    if (await checkPortFree(port)) return port;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await checkPortFree(port)) return port;
+      await new Promise((r) => setTimeout(r, 300));
+    }
   }
   // Absolute fallback (should never happen): OS-assigned. Storage will still be
   // consistent within this run; next launch normally lands on a FIXED_PORT
