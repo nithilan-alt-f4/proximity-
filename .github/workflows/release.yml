@@ -94,20 +94,24 @@ jobs:
             exit 1
           fi
 
-      - name: Build unpackaged Mac apps (x64 + arm64)
-        run: npx electron-builder --mac --dir --publish never
+      - name: Build Electron artifacts (dmg x64 + arm64)
+        run: npx electron-builder --mac --publish never
 
-      - name: Ad-hoc codesign apps (fixes "file is damaged" — no paid cert needed)
+      - name: Ad-hoc codesign apps inside DMGs (fixes "file is damaged" — no paid cert needed)
         run: |
-          for app in dist-desktop/mac/proximity+.app dist-desktop/mac-arm64/proximity+.app; do
-            if [ -d "$app" ]; then
-              echo "Ad-hoc signing: $app"
-              codesign --force --deep --sign - "$app"
-            fi
+          for dmg in dist-desktop/*.dmg; do
+            [ -f "$dmg" ] || continue
+            echo "Re-signing app in: $dmg"
+            # UDZO DMGs are read-only — convert to UDRW, mount, sign, convert back
+            hdiutil convert "$dmg" -format UDRW -o /tmp/rw.dmg
+            MOUNT=$(hdiutil attach -readwrite -noverify /tmp/rw.dmg | grep -E '^/dev/' | tail -1 | awk '{print $NF}')
+            codesign --force --deep --sign - "$MOUNT/proximity+.app"
+            codesign -v --verbose=2 "$MOUNT/proximity+.app"
+            hdiutil detach "$MOUNT"
+            hdiutil convert /tmp/rw.dmg -format UDZO -o /tmp/final.dmg
+            mv /tmp/final.dmg "$dmg"
+            rm -f /tmp/rw.dmg
           done
-
-      - name: Package signed apps into DMGs
-        run: npx electron-builder --mac --prepackaged --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
