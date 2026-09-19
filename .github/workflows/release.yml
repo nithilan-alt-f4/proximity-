@@ -94,8 +94,20 @@ jobs:
             exit 1
           fi
 
-      - name: Build Electron artifacts (dmg x64 + arm64)
-        run: npx electron-builder --mac --publish never
+      - name: Build unpackaged Mac apps (x64 + arm64)
+        run: npx electron-builder --mac --dir --publish never
+
+      - name: Ad-hoc codesign apps (fixes "file is damaged" — no paid cert needed)
+        run: |
+          for app in dist-desktop/mac/proximity+.app dist-desktop/mac-arm64/proximity+.app; do
+            if [ -d "$app" ]; then
+              echo "Ad-hoc signing: $app"
+              codesign --force --deep --sign - "$app"
+            fi
+          done
+
+      - name: Package signed apps into DMGs
+        run: npx electron-builder --mac --prepackaged --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -667,8 +667,8 @@
               Windows may flag the unsigned build: <b>More info → Run anyway</b>.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.Setup.1.0.2.exe">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
-              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.1.0.2.exe">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
+              <a class="btn" id="dl-win-setup" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.Setup.1.0.3.exe">↓ INSTALLER<span class="size" id="size-win-setup"></span></a>
+              <a class="btn ghost" id="dl-win-portable" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B.1.0.3.exe">↓ PORTABLE<span class="size" id="size-win-portable"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">NO ADMIN REQUIRED · PORTABLE = SINGLE FILE</span>
@@ -687,11 +687,12 @@
           <div class="dl-body">
             <p class="dl-note">
               Match your chip: Apple Silicon for M-series Macs, Intel for everything older.
-              Unsigned build — right-click the app and <b>Open</b> the first launch.
+              No paid Apple certificate — macOS will warn on first launch:
+              <b>right-click the app → Open</b> once, then it runs normally.
             </p>
             <div class="dl-actions">
-              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.2-arm64.dmg">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
-              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.2.dmg">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
+              <a class="btn" id="dl-mac-arm" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.3-arm64.dmg">↓ APPLE SILICON<span class="size" id="size-mac-arm"></span></a>
+              <a class="btn ghost" id="dl-mac-intel" href="https://github.com/nithilan-alt-f4/proximity-/releases/latest/download/proximity%2B-1.0.3.dmg">↓ INTEL<span class="size" id="size-mac-intel"></span></a>
             </div>
             <div class="dl-foot">
               <span class="micro-label">M1 / M2 / M3 / M4 · OR LEGACY INTEL</span>
@@ -790,9 +791,9 @@
           // API unavailable or rate-limited — buttons already have hardcoded
           // direct download URLs in HTML, so they still work. Just update stamps.
           var vr = document.getElementById("ver-readout");
-          if (vr) vr.textContent = "v1.0.2";
+          if (vr) vr.textContent = "v1.0.3";
           var hn = document.getElementById("hero-numeral");
-          if (hn) hn.textContent = "1.0.2";
+          if (hn) hn.textContent = "1.0.3";
         });
 
       /* ---- 3D rigs ------------------------------------------------- */
