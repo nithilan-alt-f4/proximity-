@@ -97,21 +97,20 @@ jobs:
       - name: Build Electron artifacts (dmg x64 + arm64)
         run: npx electron-builder --mac --publish never
 
-      - name: Ad-hoc codesign apps inside DMGs (fixes "file is damaged" — no paid cert needed)
+      - name: Verify ad-hoc signature on built apps (fixes "file is damaged" — no paid cert needed)
         run: |
-          for dmg in dist-desktop/*.dmg; do
-            [ -f "$dmg" ] || continue
-            echo "Re-signing app in: $dmg"
-            # UDZO DMGs are read-only — convert to UDRW, mount, sign, convert back
-            hdiutil convert "$dmg" -format UDRW -o /tmp/rw.dmg
-            MOUNT=$(hdiutil attach -readwrite -noverify /tmp/rw.dmg | grep -E '^/dev/' | tail -1 | awk '{print $NF}')
-            codesign --force --deep --sign - "$MOUNT/proximity+.app"
-            codesign -v --verbose=2 "$MOUNT/proximity+.app"
-            hdiutil detach "$MOUNT"
-            hdiutil convert /tmp/rw.dmg -format UDZO -o /tmp/final.dmg
-            mv /tmp/final.dmg "$dmg"
-            rm -f /tmp/rw.dmg
+          found=0
+          for app in dist-desktop/*/proximity+.app; do
+            [ -d "$app" ] || continue
+            found=1
+            echo "Verifying signature: $app"
+            codesign --verify --verbose=2 "$app"
+            codesign -dv --verbose=4 "$app" 2>&1 | grep -E "Signature|Identifier|Flags|TeamIdentifier" || true
           done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No .app bundles found to verify under dist-desktop/"
+            exit 1
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
