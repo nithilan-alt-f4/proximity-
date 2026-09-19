@@ -131,10 +131,13 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("songs", "readwrite");
       const store = transaction.objectStore("songs");
-      const request = store.put(song);
+      store.put(song);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      // Resolve only after the transaction has actually committed. Resolving on
+      // request.onsuccess can lose data if the app closes before the write flushes.
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -152,10 +155,11 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("songs", "readwrite");
       const store = transaction.objectStore("songs");
-      const request = store.delete(id);
+      store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -177,10 +181,13 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("playlists", "readwrite");
       const store = transaction.objectStore("playlists");
-      const request = store.put(playlist);
+      store.put(playlist);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      // Wait for commit, not just the request, so playlist edits survive a
+      // quick app close/restart.
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -189,10 +196,11 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("playlists", "readwrite");
       const store = transaction.objectStore("playlists");
-      const request = store.delete(id);
+      store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -219,10 +227,11 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("eq_profiles", "readwrite");
       const store = transaction.objectStore("eq_profiles");
-      const request = store.put(profile);
+      store.put(profile);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -231,10 +240,11 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("eq_profiles", "readwrite");
       const store = transaction.objectStore("eq_profiles");
-      const request = store.delete(id);
+      store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
@@ -274,10 +284,11 @@ class AudioDB {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction("play_history", "readwrite");
       const store = transaction.objectStore("play_history");
-      const request = store.clear();
+      store.clear();
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   }
 
