@@ -3,6 +3,9 @@ import audioDb, { Song, Playlist, EqProfile, PlayHistoryEntry, DEFAULT_EQ_PRESET
 
 export type PlayerTheme = "default";
 
+// Media Session action handler type
+type MediaSessionActionHandler = (details?: MediaSessionActionDetails) => void;
+
 interface AudioContextType {
   songs: Song[];
   playlists: Playlist[];
@@ -872,6 +875,102 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await audioDb.clearPlayHistory();
     setPlayHistory([]);
   };
+
+  // Media Session API - enables headphone controls, Chrome media session, Windows media controls
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    // Set metadata for the current song
+    const updateMediaSessionMetadata = () => {
+      if (!currentSong) {
+        navigator.mediaSession.metadata = null;
+        return;
+      }
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.artist,
+        album: currentSong.album || "",
+        artwork: currentSong.albumCover
+          ? [
+              { src: currentSong.albumCover, sizes: "512x512", type: "image/png" },
+              { src: currentSong.albumCover, sizes: "256x256", type: "image/png" },
+              { src: currentSong.albumCover, sizes: "128x128", type: "image/png" },
+              { src: currentSong.albumCover, sizes: "64x64", type: "image/png" },
+            ]
+          : [],
+      });
+    };
+
+    // Update metadata when current song changes
+    updateMediaSessionMetadata();
+
+    // Media Session action handlers
+    const handlePlay = () => togglePlay();
+    const handlePause = () => togglePlay();
+    const handlePrevioustrack = () => prevSong();
+    const handleNexttrack = () => nextSong();
+    const handleSeekto = (details: MediaSessionActionDetails) => {
+      if (details.seekTime !== undefined && audioRef.current) {
+        audioRef.current.currentTime = details.seekTime;
+        seek(details.seekTime);
+      }
+    };
+    const handleSeekbackward = (details: MediaSessionActionDetails) => {
+      const seekTime = details.seekOffset ? audioRef.current!.currentTime - details.seekOffset : audioRef.current!.currentTime - 10;
+      if (audioRef.current) {
+        const newTime = Math.max(0, seekTime);
+        audioRef.current.currentTime = newTime;
+        seek(newTime);
+      }
+    };
+    const handleSeekforward = (details: MediaSessionActionDetails) => {
+      const seekTime = details.seekOffset ? audioRef.current!.currentTime + details.seekOffset : audioRef.current!.currentTime + 10;
+      if (audioRef.current) {
+        const newTime = Math.min(duration, seekTime);
+        audioRef.current.currentTime = newTime;
+        seek(newTime);
+      }
+    };
+    const handleStop = () => {
+      setIsPlaying(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+
+    // Set action handlers
+    navigator.mediaSession.setActionHandler("play", handlePlay);
+    navigator.mediaSession.setActionHandler("pause", handlePause);
+    navigator.mediaSession.setActionHandler("previoustrack", handlePrevioustrack);
+    navigator.mediaSession.setActionHandler("nexttrack", handleNexttrack);
+    navigator.mediaSession.setActionHandler("seekto", handleSeekto);
+    navigator.mediaSession.setActionHandler("seekbackward", handleSeekbackward);
+    navigator.mediaSession.setActionHandler("seekforward", handleSeekforward);
+    navigator.mediaSession.setActionHandler("stop", handleStop);
+
+    // Update playback state
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+    // Cleanup
+    return () => {
+      navigator.mediaSession.setActionHandler("play", null);
+      navigator.mediaSession.setActionHandler("pause", null);
+      navigator.mediaSession.setActionHandler("previoustrack", null);
+      navigator.mediaSession.setActionHandler("nexttrack", null);
+      navigator.mediaSession.setActionHandler("seekto", null);
+      navigator.mediaSession.setActionHandler("seekbackward", null);
+      navigator.mediaSession.setActionHandler("seekforward", null);
+      navigator.mediaSession.setActionHandler("stop", null);
+      navigator.mediaSession.metadata = null;
+    };
+  }, [currentSong, isPlaying, togglePlay, prevSong, nextSong, seek, duration]);
+
+  // Update Media Session playback state when isPlaying changes
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  }, [isPlaying]);
 
   return (
     <AudioContext.Provider
