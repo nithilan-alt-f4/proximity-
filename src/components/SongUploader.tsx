@@ -13,8 +13,14 @@ interface StagedFile {
   duration: number;
   isIdentifying: boolean;
   editedFields?: { title?: boolean; artist?: boolean; album?: boolean; albumCover?: boolean; };
-  /** id of the staging group this file belongs to (one group per dropped folder, plus a loose-files bucket). */
+  /** id of the staging group this file belongs to (one group per dropped folder). */
   groupId: string;
+}
+
+interface PlaylistCreatorTag {
+  createdBy: string;
+  createdAt: number;
+  deviceId: string;
 }
 
 type GroupTargetOption = "none" | "new" | "existing";
@@ -31,7 +37,7 @@ interface GroupTarget {
   newName: string;
 }
 
-const LOOSE_GROUP_ID = "loose";
+// Removed loose file support - only folders allowed
 
 // Supported audio formats. MP3/M4A/FLAC all play natively in Chromium and all
 // carry readable embedded tags (ID3v2 / MP4 atoms / Vorbis comments) that
@@ -170,32 +176,24 @@ export const SongUploader: React.FC = () => {
   };
 
   const ensureGroup = (name: string, isFolder: boolean, created: Record<string, string>): string => {
-    const key = (isFolder ? "F:" : "L:") + name;
-    if (created[key]) return created[key];
-    // Single shared loose-files bucket — reuse it if it already exists.
-    if (!isFolder && groups.some((g) => g.id === LOOSE_GROUP_ID)) {
-      created[key] = LOOSE_GROUP_ID;
-      return LOOSE_GROUP_ID;
+    // Only folders are supported now
+    if (!isFolder) {
+      // Silently ignore non-folders
+      return "";
     }
-    const id = isFolder ? "grp_" + Math.random().toString(36).substr(2, 9) : LOOSE_GROUP_ID;
+    const key = "F:" + name;
+    if (created[key]) return created[key];
+    const id = "grp_" + Math.random().toString(36).substr(2, 9);
     created[key] = id;
-    setGroups((prev) => [...prev, { id, name, isFolder }]);
+    setGroups((prev) => [...prev, { id, name, isFolder: true }]);
     setGroupTargets((prev) => ({
       ...prev,
-      // Folders: default to "New Playlist..." pre-filled with the folder name so the
-      // user just confirms it — we do NOT auto-create a playlist behind the scenes.
-      [id]: isFolder ? { option: "new", playlistId: "", newName: name } : { option: "none", playlistId: "", newName: "" },
+      [id]: { option: "new", playlistId: "", newName: name },
     }));
     return id;
   };
 
-  const ensureLooseGroup = (): string => {
-    if (!groups.some((g) => g.id === LOOSE_GROUP_ID)) {
-      setGroups((prev) => [...prev, { id: LOOSE_GROUP_ID, name: "Loose Files", isFolder: false }]);
-      setGroupTargets((prev) => ({ ...prev, [LOOSE_GROUP_ID]: { option: "none", playlistId: "", newName: "" } }));
-    }
-    return LOOSE_GROUP_ID;
-  };
+  // Loose file groups removed - only folders allowed
 
   const handleFilesList = async (files: File[], groupId: string, groupName?: string) => {
     const audioFiles = files.filter(isAudioFile);
@@ -261,8 +259,9 @@ export const SongUploader: React.FC = () => {
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
-    const gid = ensureLooseGroup();
-    handleFilesList(Array.from(files), gid, "Loose Files");
+    // Reject loose files - only folders allowed
+    alert("Only folders are allowed. Please drag a folder containing your music to create a playlist.");
+    return;
   };
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -270,11 +269,13 @@ export const SongUploader: React.FC = () => {
     setIsDraggingOver(false);
     const items = e.dataTransfer.items;
     if (!items) {
-      if (e.dataTransfer.files) { const gid = ensureLooseGroup(); await handleFilesList(Array.from(e.dataTransfer.files), gid, "Loose Files"); }
+      if (e.dataTransfer.files) {
+        alert("Only folders are allowed. Please drag a folder containing your music to create a playlist.");
+        return;
+      }
       return;
     }
     const folderPromises: Promise<{ folderName: string; files: File[] }>[] = [];
-    const looseFiles: File[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.kind === "file") {
@@ -283,24 +284,22 @@ export const SongUploader: React.FC = () => {
           if (entry.isDirectory) {
             folderPromises.push((async () => { const traversed = await traverseFileTree(entry); return { folderName: entry.name, files: traversed.filter(isAudioFile) }; })());
           } else {
-            const file = item.getAsFile();
-            if (file && isAudioFile(file)) looseFiles.push(file);
+            // Ignore loose files - only folders allowed
           }
         } else {
-          const file = item.getAsFile();
-          if (file && isAudioFile(file)) looseFiles.push(file);
+          // Ignore loose files
         }
       }
     }
     const folders = await Promise.all(folderPromises);
     const foldersWithMp3s = folders.filter((f) => f.files.length > 0);
-    // Each dropped folder becomes its own staging group (separate metadata box) so it
-    // can be assigned to a different playlist. Loose files go into a shared "Loose Files" box.
-    const created: Record<string, string> = {};
-    if (looseFiles.length > 0) {
-      const gid = ensureGroup("Loose Files", false, created);
-      await handleFilesList(looseFiles, gid, "Loose Files");
+    if (foldersWithMp3s.length === 0) {
+      alert("No audio files found in the dropped folders. Please drag folders containing audio files (MP3, M4A, FLAC).");
+      return;
     }
+    // Each dropped folder becomes its own staging group (separate metadata box) so it
+    // can be assigned to a different playlist. Only folders are allowed.
+    const created: Record<string, string> = {};
     for (const folder of foldersWithMp3s) {
       const gid = ensureGroup(folder.folderName, true, created);
       await handleFilesList(folder.files, gid, folder.folderName);
@@ -371,7 +370,26 @@ export const SongUploader: React.FC = () => {
 
   // Resolve the playlist a group is assigned to (per its own dropdown). Creates a new
   // playlist only when the box selected "+ New Playlist" (name pre-filled with folder name).
-  const resolveGroupTargetId = async (groupId: string): Promise<string> => {
+  const getDeviceId = (): string => {
+    let deviceId = localStorage.getItem("proximity_device_id");
+    if (!deviceId) {
+      deviceId = "dev_" + Math.random().toString(36).substr(2, 12);
+      localStorage.setItem("proximity_device_id", deviceId);
+    }
+    return deviceId;
+  };
+
+const getCreatorName = (): string => {
+    let name = localStorage.getItem("proximity_creator_name");
+    if (!name) {
+      name = navigator.userAgent.includes("Mac") ? "Mac" : navigator.userAgent.includes("Win") ? "Windows" : "Device";
+      name += "_" + Math.random().toString(36).substr(2, 4);
+      localStorage.setItem("proximity_creator_name", name);
+    }
+    return name;
+  };
+
+const resolveGroupTargetId = async (groupId: string): Promise<string> => {
     const t = groupTargets[groupId];
     if (!t) return "";
     if (t.option === "existing" && t.playlistId) return t.playlistId;
@@ -380,7 +398,12 @@ export const SongUploader: React.FC = () => {
       let pl = playlists.find((p) => p.name.toLowerCase() === name.toLowerCase());
       if (pl) return pl.id;
       const id = "pl_" + Math.random().toString(36).substr(2, 9);
-      await audioDb.savePlaylist({ id, name: name, songIds: [], createdAt: Date.now() });
+      const creatorTag: PlaylistCreatorTag = {
+        createdBy: getCreatorName(),
+        createdAt: Date.now(),
+        deviceId: getDeviceId(),
+      };
+      await audioDb.savePlaylist({ id, name: name, songIds: [], createdAt: Date.now(), creatorTag });
       await loadPlaylists();
       return id;
     }
@@ -494,13 +517,11 @@ export const SongUploader: React.FC = () => {
         onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
         onDragLeave={() => setIsDraggingOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
         className={`upload-zone ${isDraggingOver ? "upload-zone-drag" : ""}`}
       >
-        <input ref={fileInputRef} type="file" accept=".mp3,.m4a,.flac,audio/mpeg,audio/mp4,audio/x-m4a,audio/flac,audio/x-flac" multiple onChange={(e) => handleFiles(e.target.files)} style={{ display: "none" }} />
         <Upload size={20} style={{ color: "var(--text-muted)" }} />
-        <span style={{ fontSize: 11, fontWeight: 600 }}>Drag & drop music files or folders</span>
-        <span className="micro-label">MP3 · M4A · FLAC — METADATA READ FROM EMBEDDED TAGS — FOLDERS AUTO-CONVERT TO PLAYLISTS</span>
+        <span style={{ fontSize: 11, fontWeight: 600 }}>Drag & drop folders to create playlists</span>
+        <span className="micro-label">MP3 · M4A · FLAC — FOLDERS AUTO-CONVERT TO PLAYLISTS WITH CREATOR TAGS</span>
       </div>
 
       {isUploading && (

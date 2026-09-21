@@ -17,6 +17,12 @@ export interface Song {
   createdAt: number;
 }
 
+export interface PlaylistCreatorTag {
+  createdBy: string;
+  createdAt: number;
+  deviceId: string;
+}
+
 export interface Playlist {
   id: string;
   name: string;
@@ -24,6 +30,7 @@ export interface Playlist {
   songIds: string[];
   cover?: string;
   createdAt: number;
+  creatorTag?: PlaylistCreatorTag;
 }
 
 export interface EqProfile {

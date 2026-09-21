@@ -99,6 +99,11 @@ export const PlaylistManager: React.FC = () => {
                 <div className="track-copy">
                   <strong>{playlist.name}</strong>
                   <span>{playlist.songIds.length} tracks</span>
+                  {playlist.creatorTag && (
+                    <span className="micro-label" style={{ marginTop: 2, display: "block" }}>
+                      Created by {playlist.creatorTag.createdBy} on {new Date(playlist.creatorTag.createdAt).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
               </button>
               <button onClick={() => deletePlaylist(playlist.id)} style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>

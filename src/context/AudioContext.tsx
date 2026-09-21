@@ -631,6 +631,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       name,
       songIds: [],
       createdAt: Date.now(),
+      creatorTag: {
+        createdBy: localStorage.getItem("proximity_creator_name") || "Unknown",
+        createdAt: Date.now(),
+        deviceId: localStorage.getItem("proximity_device_id") || "unknown",
+      },
     };
     await audioDb.savePlaylist(newPlaylist);
     await loadPlaylists();
