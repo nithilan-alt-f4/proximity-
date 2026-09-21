@@ -980,9 +980,11 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
     });
     console.log("Serving static production assets from:", distPath);
 
-    // Loopback only: the packaged desktop app embeds working API keys, so the
-    // server must never be reachable from the network.
-    const HOST = process.env.HOST || "127.0.0.1";
+    // Host binding: Electron/desktop app uses loopback only for security.
+    // Cloud platforms (Render, etc.) need 0.0.0.0 to accept external connections.
+    const isElectron = Boolean(process.versions.electron);
+    const isCloud = Boolean(process.env.RENDER || process.env.HEROKU || process.env.RAILWAY || process.env.FLY_APP_NAME);
+    const HOST = process.env.HOST || (isElectron ? "127.0.0.1" : "0.0.0.0");
     app.listen(PORT, HOST, () => {
       console.log(`Server running on ${HOST}:${PORT}`);
     }).on("error", (err: any) => {
