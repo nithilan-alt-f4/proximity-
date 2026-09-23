@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>PROXIMITY+ · NOW SPINNING</title>
+<style>
+/* ============================================================
+   PROXIMITY+ / REDLINE CONTROL ROOM — REMOTE STAGE
+   Faithful port of the in-app CENTERED fullscreen player.
+   Space Grotesk display, IBM Plex Mono telemetry, black chassis,
+   off-white paper, signal red live state.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #000;
+  --paper: #f5f5f5;
+  --paper-2: #e9e9e9;
+  --paper-3: #d8d8d8;
+  --line: #8c8c8c;
+  --line-light: #bdbdbd;
+  --graphite: #303030;
+  --graphite-light: #616161;
+  --red: #ff0000;
+  --red-dark: #b80000;
+  --ease-mechanical: cubic-bezier(.23, 1, .32, 1);
+
+  --text-secondary: #666;
+  --text-tertiary: #555;
+  --text-muted: #777;
+  --text-muted-decorative: #777;
+  --text-on-inverted-secondary: #a8a8a8;
+
+  --platen-rule: rgba(0, 0, 0, .03);
+  --grid-rule: rgba(0, 0, 0, .045);
+  --grid-rule-strong: rgba(0, 0, 0, .07);
+  --surface-hover: rgba(0, 0, 0, .055);
+  --border-faint: rgba(0, 0, 0, .11);
+  --shadow: rgba(0, 0, 0, .12);
+  --tonearm: #171717;
+
+  font-family: "Space Grotesk", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+:root[data-theme="dark"] {
+  --ink: #f2f2f2;
+  --paper: #0d0d0d;
+  --paper-2: #161616;
+  --paper-3: #222222;
+  --line: #686868;
+  --line-light: #3d3d3d;
+  --graphite: #252525;
+  --graphite-light: #444444;
+  --red: #ff0000;
+  --red-dark: #c40000;
+
+  --text-secondary: #b8b8b8;
+  --text-tertiary: #858585;
+  --text-muted: #858585;
+  --text-muted-decorative: #686868;
+  --text-on-inverted-secondary: #555555;
+
+  --platen-rule: rgba(255, 255, 255, .03);
+  --grid-rule: rgba(255, 255, 255, .045);
+  --grid-rule-strong: rgba(255, 255, 255, .07);
+  --surface-hover: rgba(255, 255, 255, .055);
+  --border-faint: rgba(255, 255, 255, .11);
+  --shadow: rgba(0, 0, 0, .45);
+  --tonearm: #a0a0a0;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; background: var(--paper); -webkit-font-smoothing: antialiased; }
+body { -webkit-tap-highlight-color: transparent; }
+button { font: inherit; border: 0; background: none; cursor: pointer; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--ink); }
+
+.micro-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .11em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ── Shell ─────────────────────────────────────────────── */
+.fs-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--paper);
+  background-image: linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), var(--grid-rule) calc(100% - 1px));
+  background-size: 56px 100%;
+  color: var(--ink);
+}
+.fs-shell::before {
+  content: "";
+  position: absolute;
+  right: -4%; bottom: -20%;
+  width: 66%; height: 91%;
+  border: 1px solid var(--border-faint);
+  background: repeating-linear-gradient(0deg, var(--grid-rule) 0 1px, transparent 1px 5px);
+  transform: rotate(-5deg);
+  pointer-events: none;
+  z-index: 0;
+}
+.fs-shell::after {
+  content: "";
+  position: absolute; top: 0; right: 0;
+  width: 50%; height: 100%;
+  background: repeating-linear-gradient(90deg, transparent 0, transparent 54px, var(--grid-rule-strong) 55px);
+  pointer-events: none;
+  z-index: 0;
+}
+.fs-bg-drift {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(45% 60% at 20% 25%, var(--platen-rule) 0, transparent 60%),
+    radial-gradient(35% 50% at 85% 70%, var(--platen-rule) 0, transparent 55%);
+  animation: fs-bg-drift 26s ease-in-out infinite alternate;
+}
+@keyframes fs-bg-drift {
+  0%   { opacity: 0.55; transform: translate3d(-2%, -1%, 0) scale(1.02); }
+  100% { opacity: 1;    transform: translate3d(2%, 1%, 0)   scale(0.98); }
+}
+
+/* ── Topbar ────────────────────────────────────────────── */
+.fs-topbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  flex-shrink: 0;
+}
+.fs-brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.brand-mark {
+  position: relative;
+  display: grid;
+  width: 29px; height: 29px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+}
+.brand-mark::before, .brand-mark::after { content: ""; position: absolute; background: var(--red); }
+.brand-mark::before { width: 4px; height: 35px; transform: rotate(41deg); }
+.brand-mark::after { width: 18px; height: 2px; transform: rotate(-41deg); }
+.fs-brand .micro-label { font-size: 8px; color: var(--text-muted-decorative); }
+.fs-topbar-right { display: flex; align-items: center; gap: 12px; }
+.fs-readout { display: flex; align-items: center; gap: 10px; }
+.fs-readout .micro-label { font-size: 8px; }
+.fs-readout-divider { width: 1px; height: 14px; background: var(--line); }
+.fs-close {
+  display: inline-flex;
+  width: 32px; height: 32px;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  transition: background 150ms var(--ease-mechanical), color 150ms var(--ease-mechanical), transform 150ms ease;
+}
+.fs-close:hover { background: var(--red); color: #fff; border-color: var(--red); }
+.fs-close:active { transform: scale(.96); }
+.live-pill {
+  display: inline-flex;
+  align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  border: 1px solid var(--ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.status-dot { display: inline-block; width: 6px; height: 6px; background: var(--red); transition: background 300ms; }
+.status-dot.live { background: var(--red); box-shadow: 0 0 0 4px rgba(255,0,0,.14); animation: pulse-live 2s infinite; }
+@keyframes pulse-live { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* ── Stage ─────────────────────────────────────────────── */
+.fs-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+}
+.fs-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 560px);
+  height: 100%;
+  padding: 18px 40px 30px;
+  position: relative;
+}
+.fs-turntable-glow {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: min(74vmin, 460px); height: min(74vmin, 460px);
+  transform: translate(-50%, -52%);
+  border: 1px solid var(--border-faint);
+  background: repeating-radial-gradient(circle at center, transparent 0 23px, var(--platen-rule) 24px 25px);
+  pointer-events: none;
+}
+.fs-turntable { position: relative; z-index: 1; width: min(100%, 360px); aspect-ratio: 1.12; }
+.turntable-wrap { position: relative; width: 100%; aspect-ratio: 1.12; animation: fs-float 7s ease-in-out infinite alternate; }
+@keyframes fs-float { from { transform: translateY(-4px); } to { transform: translateY(5px); } }
+.turntable-shadow {
+  position: absolute; top: 12%; right: 8%; bottom: 13%; left: 9%;
+  background: rgba(0,0,0,.11); transform: rotate(-6deg);
+}
+.record {
+  position: absolute; top: 12%; left: 11%; width: 72%; aspect-ratio: 1;
+  border-radius: 50%; background: #090909; box-shadow: 12px 15px 0 rgba(0,0,0,.08);
+}
+.record-spinning { animation: spin-record 8s linear infinite; }
+@keyframes spin-record { to { transform: rotate(360deg); } }
+.record-grooves {
+  position: absolute; inset: 7%; border-radius: 50%;
+  background: repeating-radial-gradient(circle at center, #1c1c1c 0 2px, #050505 2px 4px);
+  opacity: .92;
+}
+.record-grooves::after {
+  content: ""; position: absolute; inset: 15%;
+  border: 1px solid rgba(255,255,255,.09); border-radius: 50%;
+  box-shadow: 0 0 0 22px rgba(255,255,255,.03), 0 0 0 46px rgba(255,255,255,.035);
+}
+.record-label {
+  position: absolute; inset: 31%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; border-radius: 50%;
+  background: var(--red); color: var(--ink);
+}
+.record-label img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .86; }
+.record-label-text { position: relative; z-index: 1; font-size: 19px; font-weight: 800; letter-spacing: -.08em; }
+.record-label small { position: relative; z-index: 1; margin: 3px 0 0 4px; font-family: "IBM Plex Mono", monospace; font-size: 8px; letter-spacing: .1em; }
+.tonearm {
+  position: absolute; top: 7%; right: 11%; width: 35%; height: 60%;
+  transform: rotate(16deg); transform-origin: 82% 18%;
+  transition: transform 600ms var(--ease-mechanical);
+}
+.tonearm-live { transform: rotate(4deg); }
+.tonearm-pivot {
+  position: absolute; top: 8%; right: 2%; width: 35px; height: 35px;
+  border: 6px solid var(--tonearm); border-radius: 50%; background: #c3c3c3;
+}
+.tonearm-stick {
+  position: absolute; top: 24%; right: 17%; width: 7px; height: 63%;
+  background: var(--tonearm); transform: rotate(31deg); transform-origin: top;
+}
+.tonearm-head {
+  position: absolute; bottom: 4%; left: 23%; width: 25px; height: 11px;
+  background: var(--red); transform: rotate(-25deg);
+}
+.turntable-led {
+  position: absolute; right: 18%; bottom: 17%; width: 8px; height: 8px;
+  background: var(--red); box-shadow: 0 0 0 4px rgba(255,0,0,.13);
+}
+.pulse-red { animation: pulse-red 1.2s ease-in-out infinite; }
+@keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.fs-title {
+  z-index: 1;
+  max-width: 620px;
+  margin: 14px 0 0;
+  font-size: clamp(26px, 5.4vh, 56px);
+  font-weight: 800;
+  letter-spacing: -.075em;
+  line-height: .9;
+  text-align: center;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.fs-meta {
+  z-index: 1; max-width: 520px;
+  margin: 9px 0 0;
+  color: var(--text-secondary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.fs-divider { z-index: 1; width: 45px; height: 1px; margin: 16px 0; background: var(--red); }
+
+/* ── Controls ──────────────────────────────────────────── */
+.fs-controls {
+  z-index: 1;
+  display: flex;
+  width: min(100%, 420px);
+  flex-direction: column;
+  gap: 12px;
+}
+.fs-seek-row { display: flex; width: 100%; align-items: center; gap: 9px; }
+.fs-time { min-width: 34px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fs-time-r { text-align: right; }
+.fs-seekbar-wrap { position: relative; flex: 1; height: 22px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.fs-seek-track { position: relative; width: 100%; height: 2px; background: var(--line-light); }
+.fs-seek-fill { position: absolute; left: 0; top: 0; height: 100%; width: 0%; background: var(--red); }
+.fs-seek-thumb {
+  position: absolute; top: 50%; left: 0%; width: 11px; height: 11px;
+  background: var(--red); transform: translateX(-50%) translateY(-50%);
+  pointer-events: none;
+  transition: background 120ms;
+}
+.fs-seekbar-wrap.scrubbing .fs-seek-thumb { box-shadow: 0 0 0 4px rgba(255,0,0,.18); }
+
+.fs-transport-row { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.fs-btn {
+  display: inline-flex;
+  width: 36px; height: 32px;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: transparent;
+  transition: background 150ms var(--ease-mechanical), color 150ms var(--ease-mechanical), transform 150ms ease;
+}
+.fs-btn:hover { background: var(--ink); color: var(--paper); }
+.fs-btn:active, .fs-btn-icon:active { transform: scale(.96); }
+.fs-btn-play {
+  width: 48px; height: 36px;
+  border-color: var(--red); background: var(--red); color: var(--ink);
+  position: relative; overflow: hidden;
+}
+.fs-btn-play::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
+  transform: translateX(-130%);
+}
+.fs-btn-play:hover { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.fs-btn-play:hover::after { animation: btn-sheen 650ms var(--ease-mechanical) forwards; }
+@keyframes btn-sheen { to { transform: translateX(130%); } }
+.fs-btn-active { color: var(--red); border-color: var(--red); }
+.fs-volume-inline { display: flex; align-items: center; gap: 4px; margin-left: 4px; }
+.fs-btn-icon { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; }
+.fs-btn-icon:hover { color: var(--red); }
+.fs-vol-track { position: relative; width: 70px; height: 22px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.fs-vol-line { position: relative; width: 100%; height: 2px; background: var(--line-light); }
+.fs-vol-fill { position: absolute; left: 0; top: 0; height: 100%; width: 70%; background: var(--ink); }
+.fs-vol-thumb {
+  position: absolute; top: 50%; left: 70%; width: 11px; height: 11px;
+  background: var(--red); transform: translateX(-50%) translateY(-50%); pointer-events: none;
+}
+
+svg.icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
+svg.icon.fill { fill: currentColor; stroke: none; width: 16px; height: 16px; }
+span.sym { font-size: 16px; line-height: 1; display: inline-flex; }
+
+/* ── Idle state (nothing playing) ──────────────────────── */
+.fs-idle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 32px;
+  text-align: center;
+  height: 100%;
+}
+.fs-idle-disc {
+  position: relative;
+  width: clamp(120px, 24vw, 190px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  background: repeating-radial-gradient(circle, var(--grid-rule) 0 1px, transparent 1px 6px);
+  animation: fs-idle-spin 24s linear infinite;
+}
+@keyframes fs-idle-spin { to { transform: rotate(360deg); } }
+.fs-idle-disc-grooves { position: absolute; inset: 13%; border-radius: 50%; border: 1px dashed var(--grid-rule-strong); }
+.fs-idle-disc-label {
+  position: absolute; inset: 32%;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid var(--red);
+  color: var(--red);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 800; font-size: clamp(18px, 3vw, 28px);
+  background: var(--paper);
+  animation: fs-idle-spin-rev 24s linear infinite;
+}
+@keyframes fs-idle-spin-rev { to { transform: rotate(-360deg); } }
+.fs-idle-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 800; letter-spacing: -.02em;
+  margin: 0; text-transform: uppercase;
+}
+.fs-idle-sub {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px; letter-spacing: .08em; line-height: 1.8;
+}
+.fs-idle-hint { color: var(--text-muted-decorative); font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .05em; }
+
+/* ── Queue drawer ──────────────────────────────────────── */
+.fs-queue-panel {
+  position: absolute;
+  z-index: 5;
+  top: 0; right: 0; bottom: 0;
+  width: min(340px, 88vw);
+  display: flex;
+  flex-direction: column;
+  min-width: 0; min-height: 0;
+  border-left: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: -12px 0 40px rgba(0,0,0,.16);
+  transform: translateX(102%);
+  transition: transform 260ms var(--ease-mechanical);
+}
+.fs-queue-panel.open { transform: translateX(0); }
+.fs-queue-panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 52px; padding: 0 16px;
+  border-bottom: 1px solid var(--ink);
+  flex-shrink: 0;
+}
+.fs-queue-panel-header .micro-label { font-size: 9px; }
+.fs-queue-count { color: var(--red); }
+.fs-queue-panel-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.fs-queue-panel-item {
+  display: flex; width: 100%; align-items: center; gap: 10px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line-light);
+  color: var(--ink); text-align: left;
+  transition: background 150ms var(--ease-mechanical), padding 150ms var(--ease-mechanical);
+}
+.fs-queue-panel-item:active { background: var(--surface-hover); }
+.fs-queue-panel-item-active { background: var(--ink); color: var(--paper); }
+.fs-queue-panel-item-active:active { background: var(--ink); }
+.fs-queue-idx { color: var(--red); font-family: "IBM Plex Mono", monospace; font-size: 9px; flex-shrink: 0; width: 22px; }
+.fs-queue-panel-item-active .fs-queue-idx { color: var(--red); }
+.fs-queue-thumb { width: 28px; height: 28px; flex-shrink: 0; overflow: hidden; background: var(--paper-3); display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.fs-queue-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.fs-queue-info { min-width: 0; flex: 1; }
+.fs-queue-title { display: block; font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-queue-artist { display: block; margin-top: 2px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; font-size: 8px; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-queue-panel-item-active .fs-queue-artist { color: var(--text-on-inverted-secondary); }
+.fs-queue-grip { color: var(--text-muted); font-size: 15px; letter-spacing: -2px; padding: 4px 2px; flex-shrink: 0; cursor: grab; }
+.fs-queue-panel-item-active .fs-queue-grip { color: var(--text-on-inverted-secondary); }
+.fs-queue-panel-item.dragging-src { opacity: .45; }
+.fs-queue-panel-item.drop-above { box-shadow: inset 0 3px 0 var(--red); }
+.fs-queue-panel-item.drop-below { box-shadow: inset 0 -3px 0 var(--red); }
+.fs-queue-empty { padding: 24px 16px; color: var(--text-muted); font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; text-align: center; }
+
+/* ── Toast ─────────────────────────────────────────────── */
+.fs-toast {
+  position: fixed;
+  bottom: 22px; left: 50%;
+  transform: translateX(-50%) translateY(90px);
+  background: var(--ink); color: var(--paper);
+  padding: 10px 18px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  opacity: 0;
+  transition: all 350ms var(--ease-mechanical);
+  pointer-events: none;
+  z-index: 60;
+  white-space: nowrap;
+  max-width: 88vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fs-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 620px) {
+  .fs-readout { display: none; }
+  .fs-topbar { padding: 0 14px; }
+  .fs-player { padding: 10px 14px 22px; width: 100%; }
+  .fs-turntable { width: min(100%, 290px); }
+  .fs-title { font-size: clamp(22px, 4.6vh, 40px); }
+}
+@media (max-height: 600px) {
+  .fs-turntable { width: min(100%, 210px); }
+  .fs-title { font-size: clamp(20px, 4.4vh, 34px); }
+  .fs-divider { margin: 10px 0; }
+}
+@media (min-width: 900px) {
+  .fs-turntable { width: min(100%, 380px); }
+}
+</style>
+</head>
+<body>
+
+<div class="fs-shell" id="shell">
+  <div class="fs-bg-drift"></div>
+
+  <!-- Topbar -->
+  <header class="fs-topbar">
+    <div class="fs-brand">
+      <span class="brand-mark" aria-hidden="true">P+</span>
+      <span class="micro-label">PROXIMITY+</span>
+    </div>
+    <div class="fs-topbar-right">
+      <div class="fs-readout">
+        <span class="micro-label">NOW SPINNING / <span id="rrIdx">-</span></span>
+        <span class="fs-readout-divider"></span>
+        <span class="micro-label"><span id="rrCount">0</span> CUTS LOADED</span>
+      </div>
+      <button id="themeBtn" class="fs-close" title="Toggle theme" aria-label="Toggle theme">
+        <span class="sym" id="themeIcon">&#9788;</span>
+      </button>
+      <div class="live-pill" id="livePill">
+        <span class="status-dot" id="liveDot"></span>
+        <span id="liveText">CONNECTING</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stage -->
+  <div class="fs-stage">
+    <!-- Idle / empty state -->
+    <div class="fs-idle" id="idleState" style="display:none">
+      <div class="fs-idle-disc" aria-hidden="true">
+        <span class="fs-idle-disc-grooves"></span>
+        <span class="fs-idle-disc-label">P+</span>
+      </div>
+      <h1 class="fs-idle-title" id="idleTitle">NOTHING SPINNING</h1>
+      <p class="fs-idle-sub" id="idleSub">PRESS PLAY IN PROXIMITY+ AND THIS STAGE LIGHTS UP.</p>
+      <div class="fs-idle-hint" id="connHint">Waiting for the host&hellip;</div>
+    </div>
+
+    <!-- Player -->
+    <div class="fs-player" id="player" style="display:none">
+      <div class="fs-turntable-glow"></div>
+      <div class="fs-turntable">
+        <div class="turntable-wrap">
+          <div class="turntable-shadow"></div>
+          <div class="record" id="record">
+            <div class="record-grooves"></div>
+            <div class="record-label" id="recordLabel">
+              <img id="coverImg" alt="" referrerpolicy="no-referrer" style="display:none" />
+              <span class="record-label-text" id="recordText">P+</span>
+              <small>SIDE A</small>
+            </div>
+          </div>
+          <div class="tonearm" id="tonearm">
+            <span class="tonearm-pivot"></span>
+            <span class="tonearm-stick"></span>
+            <span class="tonearm-head"></span>
+          </div>
+          <div class="turntable-led" id="ttLed"></div>
+        </div>
+      </div>
+
+      <h1 class="fs-title" id="songTitle">—</h1>
+      <p class="fs-meta" id="songMeta">—</p>
+      <div class="fs-divider"></div>
+
+      <div class="fs-controls">
+        <div class="fs-seek-row">
+          <span class="fs-time" id="timeCur">0:00</span>
+          <div class="fs-seekbar-wrap" id="seekbar">
+            <div class="fs-seek-track"><div class="fs-seek-fill" id="seekFill"></div></div>
+            <div class="fs-seek-thumb" id="seekThumb"></div>
+          </div>
+          <span class="fs-time fs-time-r" id="timeDur">0:00</span>
+        </div>
+
+        <div class="fs-transport-row">
+          <button class="fs-btn" id="btnShuffle" title="Shuffle" aria-label="Shuffle">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"></path></svg>
+          </button>
+          <button class="fs-btn" id="btnPrev" title="Previous" aria-label="Previous">
+            <svg class="icon fill" viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6l-11 6 11 6z"/></svg>
+          </button>
+          <button class="fs-btn fs-btn-play" id="btnPlay" title="Play/Pause" aria-label="Play or pause">
+            <span id="playIcon"><svg class="icon fill" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></span>
+            <span id="pauseSym" style="display:none"><svg class="icon fill" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></span>
+          </button>
+          <button class="fs-btn" id="btnNext" title="Next" aria-label="Next">
+            <svg class="icon fill" viewBox="0 0 24 24"><path d="M4 6l11 6-11 6zM18 6h2v12h-2z"/></svg>
+          </button>
+          <button class="fs-btn" id="btnRepeat" title="Repeat" aria-label="Repeat">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h13M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H4"></path></svg>
+          </button>
+
+          <div class="fs-volume-inline">
+            <button class="fs-btn-icon" id="btnMute" title="Mute" aria-label="Mute">
+              <svg class="icon" id="volIcon" viewBox="0 0 24 24">
+                <path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"></path>
+              </svg>
+            </button>
+            <div class="fs-vol-track" id="volbar">
+              <div class="fs-vol-line"><div class="fs-vol-fill" id="volFill"></div></div>
+              <div class="fs-vol-thumb" id="volThumb"></div>
+            </div>
+          </div>
+
+          <button class="fs-btn-icon" id="btnQueue" title="Queue" aria-label="Queue">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h13M20 8v8M16 12h8"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue drawer -->
+    <aside class="fs-queue-panel" id="queuePanel">
+      <div class="fs-queue-panel-header">
+        <span class="micro-label">UP NEXT / <span class="fs-queue-count" id="queueCount">0</span></span>
+        <button class="fs-close" id="btnCloseQueue" title="Close queue" aria-label="Close queue">
+          <span class="sym">&#10005;</span>
+        </button>
+      </div>
+      <div class="fs-queue-panel-list" id="queueList"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="fs-toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var E = {
+    shell: $("shell"),
+    idle: $("idleState"), player: $("player"),
+    idleTitle: $("idleTitle"), idleSub: $("idleSub"), connHint: $("connHint"),
+    rrIdx: $("rrIdx"), rrCount: $("rrCount"),
+    liveDot: $("liveDot"), liveText: $("liveText"), livePill: $("livePill"),
+    themeBtn: $("themeBtn"), themeIcon: $("themeIcon"),
+    record: $("record"), recordLabel: $("recordLabel"), coverImg: $("coverImg"),
+    recordText: $("recordText"),
+    tonearm: $("tonearm"), ttLed: $("ttLed"),
+    songTitle: $("songTitle"), songMeta: $("songMeta"),
+    seekbar: $("seekbar"), seekFill: $("seekFill"), seekThumb: $("seekThumb"),
+    timeCur: $("timeCur"), timeDur: $("timeDur"),
+    btnShuffle: $("btnShuffle"), btnPrev: $("btnPrev"), btnPlay: $("btnPlay"),
+    btnNext: $("btnNext"), btnRepeat: $("btnRepeat"),
+    btnMute: $("btnMute"), btnQueue: $("btnQueue"), btnCloseQueue: $("btnCloseQueue"),
+    playIcon: $("playIcon"), pauseSym: $("pauseSym"),
+    volIcon: $("volIcon"), volbar: $("volbar"), volFill: $("volFill"), volThumb: $("volThumb"),
+    queuePanel: $("queuePanel"), queueList: $("queueList"), queueCount: $("queueCount"),
+    toast: $("toast")
+  };
+
+  var state = {
+    connected: false,
+    live: false,
+    playing: false,
+    currentTime: 0,
+    duration: 0,
+    volume: 0.8,
+    isMuted: false,
+    shuffle: false,
+    repeat: "all",
+    song: null,
+    queue: [],
+    queueIndex: -1,
+    dark: false
+  };
+
+  var scrubbing = false, scrubbedTo = 0, volScrub = false;
+  var dragIdx = null;
+
+  // ── Utilities ────────────────────────────────────────────
+  function fmt(s) {
+    s = Math.max(0, Math.floor(isNaN(s) ? 0 : s));
+    var m = Math.floor(s / 60), sec = s % 60;
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+
+  function toast(msg) {
+    E.toast.textContent = msg;
+    E.toast.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { E.toast.classList.remove("show"); }, 2600);
+  }
+
+  function svgShuffle() { return '<svg class="icon" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"></path></svg>'; }
+
+  function updateShuffleBtn() {
+    E.btnShuffle.innerHTML = svgShuffle();
+    E.btnShuffle.classList.toggle("fs-btn-active", state.shuffle);
+    E.btnShuffle.title = "Shuffle";
+  }
+  function updateRepeatBtn() {
+    var m = state.repeat;
+    if (m === "one") {
+      E.btnRepeat.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h13M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H4"></path><text x="12" y="18" style="font-size:9px;fill:currentColor;stroke:none;font-weight:700" text-anchor="middle">1</text></svg>';
+    } else if (m === "all") {
+      E.btnRepeat.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h13M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H4"></path></svg>';
+    } else {
+      E.btnRepeat.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h13M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H4"></path></svg>';
+    }
+    E.btnRepeat.classList.toggle("fs-btn-active", m !== "none");
+    E.btnRepeat.title = "Repeat: " + m;
+  }
+  function updateVolumeIcon() {
+    E.volIcon.innerHTML = '<path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"></path>';
+    if (state.isMuted || state.volume === 0) {
+      E.volIcon.innerHTML += '<path d="M22 9l-6 6M16 9l6 6"></path>';
+    }
+    E.volIcon.setAttribute("viewBox", "0 0 24 24");
+  }
+  function updatePlayBtn() {
+    if (state.playing) {
+      E.playIcon.style.display = "none";
+      E.pauseSym.innerHTML = '<svg class="icon fill" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+      E.pauseSym.style.display = "inline-flex";
+    } else {
+      E.pauseSym.style.display = "none";
+      E.playIcon.innerHTML = '<svg class="icon fill" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+      E.playIcon.style.display = "inline-flex";
+    }
+  }
+  function updateLivePill() {
+    var on = state.live && state.connected;
+    E.liveDot.classList.toggle("live", on);
+    E.liveText.textContent = !state.connected ? "RECONNECTING" : on ? "LIVE" : "LINKED";
+  }
+  function setTheme(dark) {
+    state.dark = dark;
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    E.themeIcon.innerHTML = dark ? "\u263E" : "\u2600";
+    try { localStorage.setItem("pnp-theme", dark ? "dark" : "light"); } catch (e) {}
+  }
+
+  // ── Render ───────────────────────────────────────────────
+  function render() {
+    var hasSong = !!(state.song && state.song.uuid);
+    E.idle.style.display = hasSong ? "none" : "flex";
+    E.player.style.display = hasSong ? "flex" : "none";
+    if (!hasSong) {
+      var available = state.queue && state.queue.length > 0;
+      E.idleTitle.textContent = available ? "PAUSED" : "NOTHING SPINNING";
+      E.idleSub.textContent = available
+        ? "CLICK PLAY TO RESUME THE ARCHIVE."
+        : "PRESS PLAY IN PROXIMITY+ AND THIS STAGE LIGHTS UP.";
+      return;
+    }
+
+    var s = state.song;
+    E.songTitle.textContent = s.title || "UNKNOWN TRACK";
+    E.songMeta.textContent = [s.artist, s.album].filter(Boolean).join("  \u2022  ") || "UNKNOWN ARTIST";
+
+    // Record label: cover art or P+ fallback
+    if (s.albumCover) {
+      E.coverImg.src = s.albumCover;
+      E.coverImg.style.display = "block";
+      E.recordText.style.display = "none";
+      E.recordLabel.querySelector("small").style.display = "none";
+    } else {
+      E.coverImg.style.display = "none";
+      E.recordText.style.display = "inline";
+      E.recordLabel.querySelector("small").style.display = "inline";
+    }
+
+    // Spinning state
+    E.record.classList.toggle("record-spinning", state.playing);
+    E.tonearm.classList.toggle("tonearm-live", state.playing);
+    E.ttLed.classList.toggle("pulse-red", state.playing);
+
+    // Readout
+    E.rrIdx.textContent = state.queueIndex >= 0 ? String(state.queueIndex + 1) : "-";
+    E.rrCount.textContent = String((state.queue || []).length);
+
+    updateProgressUI();
+    updateVolumeUI();
+    updatePlayBtn();
+    updateShuffleBtn();
+    updateRepeatBtn();
+    updateVolumeIcon();
+    renderQueue();
+  }
+
+  function updateProgressUI() {
+    var d = state.duration || 0;
+    var cur = scrubbing ? scrubbedTo : state.currentTime;
+    var pct = d > 0 ? Math.min(100, (cur / d) * 100) : 0;
+    E.seekFill.style.width = pct + "%";
+    E.seekThumb.style.left = pct + "%";
+    E.timeCur.textContent = fmt(cur);
+    E.timeDur.textContent = fmt(d);
+  }
+
+  function updateVolumeUI() {
+    var v = (state.isMuted ? 0 : state.volume) * 100;
+    v = Math.max(0, Math.min(100, v));
+    E.volFill.style.width = v + "%";
+    E.volThumb.style.left = v + "%";
+  }
+
+  function renderQueue() {
+    var q = state.queue || [];
+    E.queueCount.textContent = String(q.length);
+    E.queueList.innerHTML = "";
+    if (q.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "fs-queue-empty";
+      empty.textContent = "QUEUE EMPTY";
+      E.queueList.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < q.length; i++) {
+      var item = q[i];
+      var div = document.createElement("div");
+      var active = i === state.queueIndex;
+      div.className = "fs-queue-panel-item" + (active ? " fs-queue-panel-item-active" : "");
+      div.dataset.idx = String(i);
+      div.innerHTML =
+        '<span class="fs-queue-idx">' + pad(i + 1) + '</span>' +
+        '<span class="fs-queue-thumb">' + (item.albumCover ? '<img src="' + esc(item.albumCover) + '" alt="" />' : '\u266B') + '</span>' +
+        '<div class="fs-queue-info">' +
+          '<span class="fs-queue-title">' + esc(item.title || ("TRACK " + (i + 1))) + '</span>' +
+          '<span class="fs-queue-artist">' + esc(item.artist || "") + '</span>' +
+        '</div>' +
+        '<span class="fs-queue-grip">\u2261</span>';
+      div.addEventListener("click", function (e) {
+        if (e.target.closest(".fs-queue-grip")) return;
+        sendCmd("playAt", { index: parseInt(this.dataset.idx, 10) });
+      });
+      E.queueList.appendChild(div);
+    }
+    attachDrag();
+  }
+
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // ── Drag-to-reorder (pick up handle, tap destination) ───
+  function attachDrag() {
+    var grips = E.queueList.querySelectorAll(".fs-queue-grip");
+    var moving = false, fromIdx = -1;
+    Array.prototype.forEach.call(grips, function (g) {
+      g.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var parent = g.parentElement;
+        var idx = parseInt(parent.dataset.idx, 10);
+        if (moving) {
+          // cancel move mode
+          moving = false;
+          fromIdx = -1;
+          E.queueList.querySelectorAll(".fs-queue-panel-item").forEach(function (it) {
+            it.style.opacity = "";
+          });
+          toast("MOVE CANCELLED");
+          return;
+        }
+        moving = true;
+        fromIdx = idx;
+        E.queueList.querySelectorAll(".fs-queue-panel-item").forEach(function (it) {
+          it.style.opacity = "0.4";
+        });
+        parent.style.opacity = "1";
+        toast("TAP DESTINATION ROW TO MOVE");
+      });
+    });
+    E.queueList.addEventListener("click", function (e) {
+      if (!moving) return;
+      var item = e.target.closest(".fs-queue-panel-item");
+      if (!item) return;
+      var toIdx = parseInt(item.dataset.idx, 10);
+      var from = fromIdx;
+      moving = false;
+      fromIdx = -1;
+      E.queueList.querySelectorAll(".fs-queue-panel-item").forEach(function (it) { it.style.opacity = ""; });
+      if (from !== toIdx && from >= 0) {
+        sendCmd("reorder", { from: from, to: toIdx });
+      }
+    });
+  }
+
+  // ── Command helpers (WebSocket first, HTTP fallback) ────
+  function sendCmd(cmd, data) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "cmd", cmd: cmd, data: data || {} }));
+    } else {
+      // HTTP fallback
+      fetch("/api/remote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cmd: cmd, data: data || {} })
+      }).catch(function () { toast("OFFLINE \u2014 CAN'T " + cmd.toUpperCase()); });
+    }
+  }
+
+  function cycleRepeat() {
+    var next = state.repeat === "none" ? "all" : state.repeat === "all" ? "one" : "none";
+    sendCmd("repeat", { mode: next });
+  }
+
+  // ── Seekbar / volume pointer handling ───────────────────
+  function barPos(el, clientX) {
+    var rect = el.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  }
+
+  E.seekbar.addEventListener("pointerdown", function (e) {
+    if (!state.song) return;
+    scrubbing = true;
+    E.seekbar.classList.add("scrubbing");
+    var p = barPos(E.seekbar, e.clientX);
+    scrubbedTo = p * (state.duration || 0);
+    updateProgressUI();
+  });
+  document.addEventListener("pointermove", function (e) {
+    if (!scrubbing) return;
+    var p = barPos(E.seekbar, e.clientX);
+    scrubbedTo = p * (state.duration || 0);
+    updateProgressUI();
+  });
+  document.addEventListener("pointerup", function () {
+    if (!scrubbing) return;
+    scrubbing = false;
+    E.seekbar.classList.remove("scrubbing");
+    sendCmd("seek", { time: Math.max(0, Math.min(state.duration || 0, scrubbedTo)) });
+    scrubbedTo = 0;
+  });
+  document.addEventListener("pointercancel", function () {
+    scrubbing = false;
+    E.seekbar.classList.remove("scrubbing");
+    scrubbedTo = 0;
+  });
+
+  E.volbar.addEventListener("pointerdown", function (e) {
+    volScrub = true;
+    var v = barPos(E.volbar, e.clientX);
+    sendCmd("volume", { volume: v });
+  });
+  document.addEventListener("pointermove", function (e) {
+    if (!volScrub) return;
+    var v = barPos(E.volbar, e.clientX);
+    sendCmd("volume", { volume: v });
+  });
+  document.addEventListener("pointerup", function () { volScrub = false; });
+  document.addEventListener("pointercancel", function () { volScrub = false; });
+
+  // ── Buttons ──────────────────────────────────────────────
+  E.btnPlay.addEventListener("click", function () {
+    sendCmd(state.playing ? "pause" : "play");
+  });
+  E.btnNext.addEventListener("click", function () { sendCmd("next"); });
+  E.btnPrev.addEventListener("click", function () { sendCmd("prev"); });
+  E.btnShuffle.addEventListener("click", function () {
+    sendCmd("shuffle", { shuffle: !state.shuffle });
+  });
+  E.btnRepeat.addEventListener("click", cycleRepeat);
+  E.btnMute.addEventListener("click", function () {
+    sendCmd("mute", { muted: !(state.isMuted) });
+  });
+  E.btnQueue.addEventListener("click", function () { openQueue(true); });
+  E.btnCloseQueue.addEventListener("click", function () { openQueue(false); });
+  E.recordLabel.addEventListener("click", function () { openQueue(true); });
+
+  function openQueue(open) {
+    E.queuePanel.classList.toggle("open", open);
+    if (open) renderQueue();
+  }
+
+  // Keyboard
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space" || e.code === "KeyK") { e.preventDefault(); sendCmd(state.playing ? "pause" : "play"); }
+    if (e.key === "Escape") openQueue(false);
+    if (e.code === "ArrowRight" && e.shiftKey) sendCmd("next");
+    if (e.code === "ArrowLeft" && e.shiftKey) sendCmd("prev");
+  });
+
+  // Theme
+  var savedTheme = null;
+  try { savedTheme = localStorage.getItem("pnp-theme"); } catch (e) {}
+  setTheme(savedTheme === "dark");
+  E.themeBtn.addEventListener("click", function () { setTheme(!state.dark); });
+
+  // ── WebSocket + HTTP polling ────────────────────────────
+  var ws = null;
+  var retryTimer = null;
+  var pollTimer = null;
+  var reconnectDelay = 1500;
+  var lastBcast = 0;
+
+  function wsUrl() {
+    var proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return proto + "//" + location.host + "/ws";
+  }
+
+  function applyState(s) {
+    if (!s) return;
+    var songChanged = !!(s.song && s.song.uuid !== (state.song && state.song.uuid));
+    state.song = s.song || null;
+    state.playing = !!s.playing;
+    state.currentTime = typeof s.currentTime === "number" ? s.currentTime : 0;
+    state.duration = typeof s.duration === "number" ? s.duration : 0;
+    if (typeof s.volume === "number") state.volume = s.volume;
+    if (typeof s.isMuted === "boolean") state.isMuted = s.isMuted;
+    if (typeof s.shuffle === "boolean") state.shuffle = s.shuffle;
+    if (typeof s.repeat === "string") state.repeat = s.repeat;
+    if (Array.isArray(s.queue)) {
+      state.queue = s.queue;
+      state.queueIndex = typeof s.queueIndex === "number" ? s.queueIndex : -1;
+    }
+    render();
+  }
+
+  function connect() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    try {
+      ws = new WebSocket(wsUrl());
+    } catch (e) {
+      state.connected = false;
+      updateLivePill();
+      retryTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+      return;
+    }
+    ws.onopen = function () {
+      state.connected = true;
+      reconnectDelay = 1500;
+      updateLivePill();
+      // The server pushes the latest snapshot to every new client on connect.
+    };
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg) return;
+      if (msg.type === "state") {
+        state.live = true;
+        lastBcast = Date.now();
+        applyState(msg.state);
+      }
+    };
+    ws.onclose = function () {
+      state.connected = false;
+      updateLivePill();
+      retryTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+    };
+    ws.onerror = function () {
+      try { ws.close(); } catch (e) {}
+    };
+  }
+
+  // HTTP polling: belt-and-braces for Kindle's older WebKit which may not
+  // keep WebSockets alive reliably. Runs alongside WS; cheap request.
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function () {
+      fetch("/api/state", { method: "GET" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (data && data.state) {
+            state.live = true;
+            lastBcast = Date.now();
+            applyState(data.state);
+          }
+        })
+        .catch(function () {});
+    }, 2500);
+  }
+
+  // Detect whether we are actually served by the proximity+ server.
+  function detectServer() {
+    fetch("/api/health", { method: "GET" })
+      .then(function (r) { return r.ok; })
+      .catch(function () { return false; })
+      .then(function (ok) {
+        if (!ok) {
+          E.connHint.textContent = "OPEN THIS FROM PROXIMITY+ \u2014 http://<host>:37419/now-playing";
+        } else {
+          E.connHint.textContent = "CONNECTING TO HOST\u2026";
+        }
+      });
+  }
+
+  // Local progress ticker: if the host is silent but the page believes it is
+  // playing, nudge currentTime forward so the clock doesn't freeze mid-song.
+  var tickTimer = null;
+  function startTicker() {
+    if (tickTimer) return;
+    tickTimer = setInterval(function () {
+      // 3s of silence from host while "playing" = host went quiet; advance 1s.
+      if (state.connected && state.playing && Date.now() - lastBcast > 3000) {
+        state.currentTime = Math.min((state.currentTime || 0) + 1, state.duration || (state.currentTime || 0) + 1);
+        updateProgressUI();
+      }
+      updateLivePill();
+    }, 1000);
+  }
+  startTicker();
+
+  // Host staleness: drop the LIVE badge if nothing has arrived for a while.
+  setInterval(function () {
+    if (state.connected && Date.now() - lastBcast > 8000) {
+      state.live = false;
+      updateLivePill();
+    }
+  }, 4000);
+
+  updateShuffleBtn();
+  updateRepeatBtn();
+  updateVolumeIcon();
+  render();
+  connect();
+  startPolling();
+  detectServer();
+
+  // Keep screen lit on Kindle while page is open
+  if (navigator.wakeLock) {
+    var wakeReq = function () {
+      navigator.wakeLock.request("screen").then(function (w) {
+        /* released automatically */
+        setTimeout(function () { try { w.release && w.release(); } catch (e) {} }, 30000);
+      }).catch(function () {});
+    };
+    wakeReq();
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") wakeReq();
+    });
+  }
+
+  // Local progress ticker: when connected but host is quiet (paused), keep clock still.
+})();
+</script>
+</body>
+</html>

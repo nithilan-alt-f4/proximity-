@@ -977,6 +977,172 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [isPlaying]);
 
+  // ── Now Playing / Kindle remote bridge ────────────────────────────────────
+  // Broadcasts lightweight playback state (song metadata, cover, position,
+  // queue) over the server's WebSocket so the "Now Playing" page — e.g. a
+  // Kindle on the same Wi-Fi — can render it live. Also listens for remote
+  // control commands (play/pause/next/prev/seek/volume/playAt/reorder).
+  // NOTE: audio blobs are NEVER sent — only metadata.
+
+  // Reorder the queue by index (remote drag-and-drop). Keeps the currently
+  // playing song anchored so playback continues on the right track.
+  const reorderQueueItem = (from: number, to: number) => {
+    setQueue((prev) => {
+      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    setQueueIndex((prevIdx) => {
+      if (prevIdx < 0) return prevIdx;
+      if (from === prevIdx) return to;
+      if (from < prevIdx && to >= prevIdx) return prevIdx - 1;
+      if (from > prevIdx && to <= prevIdx) return prevIdx + 1;
+      return prevIdx;
+    });
+  };
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const lastWsPushRef = useRef(0);
+  const wsCmdRef = useRef<{ [cmd: string]: (data: any) => void }>({});
+
+  // Always point the command dispatcher at the latest closures.
+  wsCmdRef.current = {
+    play: () => { if (!isPlaying) togglePlay(); },
+    pause: () => { if (isPlaying) togglePlay(); },
+    next: () => nextSong(),
+    prev: () => prevSong(),
+    seek: (d) => { if (typeof d?.time === "number") seek(d.time); },
+    volume: (d) => { if (typeof d?.volume === "number") setVolumeLevel(d.volume); },
+    mute: (d) => { if (typeof d?.muted === "boolean" && d.muted !== isMuted) toggleMute(); },
+    shuffle: (d) => {
+      const want = typeof d?.shuffle === "boolean" ? d.shuffle : !shuffle;
+      if (want !== shuffle) toggleShuffle();
+    },
+    repeat: (d) => {
+      if (d?.mode === "none" || d?.mode === "one" || d?.mode === "all") setRepeatMode(d.mode);
+      else if (repeat === "none") setRepeatMode("all");
+      else if (repeat === "all") setRepeatMode("one");
+      else setRepeatMode("none");
+    },
+    playAt: (d) => {
+      if (typeof d?.index === "number" && queue[d.index]) playSong(queue[d.index]);
+    },
+    reorder: (d) => {
+      if (typeof d?.from === "number" && typeof d?.to === "number") reorderQueueItem(d.from, d.to);
+    },
+  };
+
+  // Build the current serializable playback snapshot.
+  const buildWsStateRef = useRef<() => any>(() => null);
+  buildWsStateRef.current = () => ({
+    song: currentSong
+      ? {
+          uuid: currentSong.id,
+          title: currentSong.title,
+          artist: currentSong.artist,
+          album: currentSong.album || "",
+          albumCover: currentSong.albumCover || "",
+          duration: currentSong.duration || 0,
+        }
+      : null,
+    playing: isPlaying,
+    currentTime: audioRef.current ? audioRef.current.currentTime : currentTime,
+    duration,
+    volume: isMuted ? 0 : volume,
+    isMuted,
+    shuffle,
+    repeat,
+    queue: queue.map((s) => ({
+      uuid: s.id,
+      title: s.title,
+      artist: s.artist,
+      duration: s.duration || 0,
+    })),
+    queueIndex,
+  });
+
+  // Push state at most once per second (timeupdate fires ~4x/sec, throttle it).
+  const pushWsStateRef = useRef<() => void>(() => {});
+  pushWsStateRef.current = () => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const now = Date.now();
+    if (now - lastWsPushRef.current < 1000) return;
+    lastWsPushRef.current = now;
+    try {
+      ws.send(JSON.stringify({ type: "state", state: buildWsStateRef.current() }));
+    } catch {}
+  };
+
+  // Connect the bridge once, reconnect with backoff on drop.
+  useEffect(() => {
+    let alive = true;
+    let ws: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let delay = 1500;
+
+    const connect = () => {
+      if (!alive) return;
+      try {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${location.host}/ws`);
+      } catch {
+        retryTimer = setTimeout(connect, delay);
+        delay = Math.min(delay * 1.5, 10000);
+        return;
+      }
+
+      ws.onopen = () => {
+        wsRef.current = ws;
+        lastWsPushRef.current = 0;
+        // Send an immediate snapshot so the remote page gets the song now.
+        try {
+          ws.send(JSON.stringify({ type: "state", state: buildWsStateRef.current() }));
+        } catch {}
+      };
+
+      ws.onmessage = (ev) => {
+        let msg: any;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        if (!msg || typeof msg !== "object" || msg.type !== "cmd" || !msg.cmd) return;
+        const fn = wsCmdRef.current[msg.cmd];
+        if (fn) fn(msg.data || {});
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!alive) return;
+        retryTimer = setTimeout(connect, delay);
+        delay = Math.min(delay * 1.5, 10000);
+      };
+
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    };
+
+    // Also tick state out regularly so the remote progress bar stays live even
+    // if nothing else triggers a push.
+    const tick = setInterval(() => { pushWsStateRef.current(); }, 1000);
+
+    connect();
+    return () => {
+      alive = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      clearInterval(tick);
+      try { ws?.close(); } catch {}
+      wsRef.current = null;
+    };
+  }, []);
+
+  // Push immediately whenever meaningful playback state changes (song, play
+  // state, queue, volume, seek). Interval covers the slow progress updates.
+  useEffect(() => {
+    lastWsPushRef.current = 0;
+    const t = setTimeout(() => pushWsStateRef.current(), 50);
+    return () => clearTimeout(t);
+  }, [currentSong?.id, isPlaying, queue, queueIndex, volume, isMuted, shuffle, repeat, duration]);
+
   return (
     <AudioContext.Provider
       value={{

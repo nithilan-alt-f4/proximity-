@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
+import { WebSocketServer, WebSocket } from "ws";
 // NOTE: vite is imported lazily inside the dev branch below. The production
 // bundle (dist/server.cjs) must never require vite — the packaged desktop app
 // does not ship it.
@@ -422,6 +424,101 @@ async function startServer() {
   // In production (including Electron), the port can be overridden via PORT env.
   const PORT = Number(process.env.PORT) || 3001;
 
+  // ---- WebSocket Server for Real-Time Playback State ----
+  // Connect the proximity+ app (Electron renderer) and the Kindle/"Now Playing"
+  // web page together. The app publishes its playback state; remote pages subscribe
+  // to it and can send control commands (play/pause/next/prev/seek/volume/reorder).
+  const wss = new WebSocketServer({ noServer: true });
+  const wsClients = new Set<WebSocket>();
+  // The most recent playback state pushed by the app, kept so a page that connects
+  // late instantly gets the current song instead of waiting for the next tick.
+  let latestPlaybackState: any = null;
+
+  // Broadcast a message to every connected WebSocket client.
+  function broadcastMessage(message: any) {
+    const raw = JSON.stringify(message);
+    for (const client of wsClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(raw);
+      }
+    }
+  }
+
+  // Broadcast state to all connected WebSocket clients
+  function broadcastState(state: any) {
+    latestPlaybackState = state;
+    broadcastMessage({ type: "state", state });
+  }
+
+  // Send a message to every client except the sender (used to relay remote
+  // control commands to the app without echoing them back to the page).
+  function broadcastExcept(ws: WebSocket, message: any) {
+    const raw = JSON.stringify(message);
+    for (const client of wsClients) {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        client.send(raw);
+      }
+    }
+  }
+
+  // Handle WebSocket upgrade requests
+  function handleWsUpgrade(request: any, socket: any, head: Buffer) {
+    // Only claim /ws connections. Other upgrade requests (e.g. Vite's HMR socket
+    // in dev mode) must pass through untouched to their own handlers.
+    let url = "";
+    try {
+      url = (request?.url || "").split("?")[0];
+    } catch {}
+    if (url !== "/ws") {
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  }
+
+  wss.on("connection", (ws: WebSocket) => {
+    wsClients.add(ws);
+    console.log(`[WS] Client connected. Total clients: ${wsClients.size}`);
+
+    // A brand new page gets the current playback snapshot immediately.
+    if (latestPlaybackState) {
+      ws.send(JSON.stringify({ type: "state", state: latestPlaybackState }));
+    }
+
+    ws.on("message", (raw) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== "object") return;
+
+      // The app pushes { type: "state", state } whenever playback changes.
+      if (msg.type === "state" && msg.state) {
+        broadcastState(msg.state);
+        return;
+      }
+
+      // A remote page sends { type: "cmd", cmd, data } for media controls.
+      // Relay it to every OTHER client (the app picks it up and acts on it).
+      if (msg.type === "cmd" && msg.cmd) {
+        broadcastExcept(ws, { type: "cmd", cmd: msg.cmd, data: msg.data || {} });
+      }
+    });
+
+    ws.on("close", () => {
+      wsClients.delete(ws);
+      console.log(`[WS] Client disconnected. Total clients: ${wsClients.size}`);
+    });
+
+    ws.on("error", (err) => {
+      console.warn("[WS] Client error:", err.message);
+      wsClients.delete(ws);
+    });
+  });
+
   // Middleware for body parsing
   app.use(express.json({ limit: "10mb" }));
 
@@ -436,6 +533,46 @@ async function startServer() {
   // API Route: Health Check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // API Route: Snapshot of the current playback state (for pages that don't use WS)
+  app.get("/api/state", (req, res) => {
+    res.json({ state: latestPlaybackState });
+  });
+
+  // API Route: Push playback state from the app (HTTP fallback to WebSocket)
+  app.post("/api/state", (req, res) => {
+    const { state } = req.body || {};
+    if (state && typeof state === "object") {
+      broadcastState(state);
+      res.json({ ok: true });
+    } else {
+      res.status(400).json({ error: "State object required" });
+    }
+  });
+
+  // API Route: Remote control command (HTTP fallback to WebSocket)
+  app.post("/api/remote", (req, res) => {
+    const { cmd, data } = req.body || {};
+    if (cmd && typeof cmd === "string") {
+      broadcastMessage({ type: "cmd", cmd, data: data || {} });
+      res.json({ ok: true });
+    } else {
+      res.status(400).json({ error: "cmd string required" });
+    }
+  });
+
+  // Now Playing page — direct routes (also served from static dir after build)
+  // In the packaged Electron app there is no `public/` folder, so fall back to the
+  // bundled copy that Vite places inside dist/ (dist/now-playing/index.html).
+  const nowPlayingDir = path.join(process.cwd(), "public", "now-playing");
+  const getNowPlayingPath = () => {
+    const publicFile = path.join(nowPlayingDir, "index.html");
+    if (fs.existsSync(publicFile)) return publicFile;
+    return path.join(__dirname, "now-playing", "index.html");
+  };
+  app.get(["/now-playing", "/now-playing/", "/remote", "/remote/"], (req, res) => {
+    res.sendFile(getNowPlayingPath());
   });
 
    // API Route: Identify Song Title, Artist & Album from the raw filename using Groq (multi-key, parallel-friendly); iTunes only for album artwork.
@@ -934,6 +1071,12 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
     await vite.listen();
     vite.printUrls();
 
+    // Attach WebSocket upgrade handler to Vite's HTTP server for dev mode
+    const httpServer = (vite as any).httpServer;
+    if (httpServer) {
+      httpServer.on("upgrade", handleWsUpgrade);
+    }
+
     // Robustness: a browser/client disconnecting abruptly mid-request (ECONNRESET,
     // aborted handshake, etc.) can emit an unhandled 'error' on the underlying socket
     // and crash the whole Node process. Attach swallow handlers so a single bad client
@@ -985,7 +1128,7 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
     const isElectron = Boolean(process.versions.electron);
     const isCloud = Boolean(process.env.RENDER || process.env.HEROKU || process.env.RAILWAY || process.env.FLY_APP_NAME);
     const HOST = process.env.HOST || (isElectron ? "127.0.0.1" : "0.0.0.0");
-    app.listen(PORT, HOST, () => {
+    const server = app.listen(PORT, HOST, () => {
       console.log(`Server running on ${HOST}:${PORT}`);
     }).on("error", (err: any) => {
       if (err?.code === "EADDRINUSE") {
@@ -995,6 +1138,9 @@ ${JSON.stringify(syncedLyrics.map((l: any) => ({ time: l.time, text: l.text })))
       }
       process.exit(1);
     });
+
+  // Attach WebSocket upgrade handler to production HTTP server
+  server.on("upgrade", handleWsUpgrade);
   }
 }
 
