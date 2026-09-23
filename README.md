@@ -1,17 +1,17 @@
 ﻿# proximity+
 
-A minimal, fast, and beautiful local music player with **automatic lyrics** and **auto-tagging**. Drop in a folder of untagged, messy, downloader-cluttered MP3s — proximity+ identifies every track with AI, fetches synchronized lyrics, and cleans up your library automatically.
+A minimal, fast, and beautiful local music player with **automatic lyrics** and **auto-tagging**. Drop in a folder of untagged, messy, downloader-cluttered MP3s proximity+ identifies every track with AI, fetches synchronized lyrics, and cleans up your library automatically.
 
-Built with Electron, React, Express, and Groq.
+Built with Electron, React, Express, and Groq..... preview: https://proximity-em5e.onrender.com/
 
 ## Features
 
-- **AI auto-tagging** — identifies title, artist, and album from even the most cluttered filenames ("03 - [320KBPS] blinding_lights(1).mp3"), with cover art from the iTunes catalog
-- **Automatic synchronized lyrics** — karaoke-style line highlighting as the song plays
-- **Instant search** — fuzzy search across your whole library
-- **Dark industrial design** — red-on-black, minimal chrome, keyboard-driven
-- **Fully local** — your music files never leave your machine; only filenames are sent for identification
-- **Zero-config desktop app** — keys are embedded at build time; no API setup for end users
+- **AI auto-tagging** identifies title, artist, and album from even the most cluttered filenames ("03 - [320KBPS] blinding_lights(1).mp3"), with cover art from the iTunes catalog
+- **Automatic synchronized lyrics** karaoke-style line highlighting as the song plays
+- **Instant search** fuzzy search across your whole library
+- **Dark industrial design** red-on-black, minimal chrome, keyboard-driven
+- **Fully local** your music files never leave your machine; only filenames are sent for identification
+- **Zero-config desktop app** keys are embedded at build time; no API setup for end users
 
 ## Downloads
 
